@@ -23,8 +23,9 @@ BOSS_STAGES        = (4, 8, 12)
 PLAYER_START_HP      = 120
 PLAYER_START_STAMINA = 100
 PLAYER_START_GOLD    = 80
-PLAYER_START_STR     = 10   # strength:  damage bonus + physical damage reduction
-PLAYER_START_AGI     = 10   # agility:   crit chance % + evasion chance %
+PLAYER_START_STR     = 10   # strength:   damage bonus + physical damage reduction
+PLAYER_START_AGI     = 10   # agility:    crit chance % + evasion chance %
+PLAYER_START_END     = 10   # endurance:  governs max stamina pool
 
 # Limbs
 LIMBS            = ("Head", "Torso", "L-Arm", "R-Arm", "L-Leg", "R-Leg")

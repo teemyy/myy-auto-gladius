@@ -45,6 +45,7 @@ When neither action beats the other (e.g. Heavy vs Heavy) both sides trade hits.
 | Gold | Currency for the town hub |
 | STR (Strength) | Increases attack damage dealt; increases physical damage reduction received |
 | AGI (Agility) | Increases crit chance %; increases evasion chance % (dodge incoming attacks entirely) |
+| END (Endurance) | Governs max stamina pool; each +1 END raises max stamina by 5 |
 
 ---
 
@@ -111,7 +112,7 @@ Accessible between every stage.
 |----------|----------|
 | **Smithy** | Buy and sell weapons; upgrade grade |
 | **Store** | Buy and sell armor |
-| **Training Ground** | Spend gold to increase Agility (+1 % per session) |
+| **Training Ground** | Permanent stat investment: +1 STR, +1 AGI, or +1 END per session; cost scales with current value |
 | **Healer** | Restore limb integrity; costs gold per limb |
 
 ---

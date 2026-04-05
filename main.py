@@ -58,12 +58,13 @@ def main() -> None:
             else:
                 # Confirmed character — create player and enter town
                 player = Player(
-                    name     = result["name"],
-                    hp       = result["hp"],
-                    stamina  = result["stamina"],
-                    gold     = TOWN_START_GOLD,
-                    strength = result["strength"],
-                    agility  = result["agility"],
+                    name      = result["name"],
+                    hp        = result["hp"],
+                    stamina   = result["stamina"],
+                    gold      = TOWN_START_GOLD,
+                    strength  = result["strength"],
+                    agility   = result["agility"],
+                    endurance = result["endurance"],
                 )
                 current = TownScreen(screen, player, equipment=None, stage=1)
 

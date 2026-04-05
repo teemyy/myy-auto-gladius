@@ -15,6 +15,7 @@ CHARACTERS: list[dict] = [
         "stamina":          120,
         "strength":           8,   # low STR — relies on crits and evasion
         "agility":           18,   # high AGI — frequent crits and dodges
+        "endurance":         10,   # average stamina pool
         "starting_weapon":  "iron_sword",
         # Visuals
         "portrait_bg":      ( 28,  40,  80),
@@ -34,6 +35,7 @@ CHARACTERS: list[dict] = [
         "stamina":           90,
         "strength":          18,   # high STR — hits hard, shrugs off damage
         "agility":            6,   # low AGI — does not dodge or crit often
+        "endurance":         14,   # high END — stamina pool for sustained Defend
         "starting_weapon":  "iron_axe",
         # Visuals
         "portrait_bg":      ( 72,  22,  22),
@@ -53,6 +55,7 @@ CHARACTERS: list[dict] = [
         "stamina":          110,
         "strength":          10,   # medium STR
         "agility":           20,   # highest AGI — master of evasion and crits
+        "endurance":         12,   # medium END
         "starting_weapon":  "iron_bow",
         # Visuals
         "portrait_bg":      ( 32,  18,  65),
@@ -70,6 +73,7 @@ _HP_MAX      = 150
 _STAMINA_MAX = 130
 _STR_MAX     = 20
 _AGI_MAX     = 22
+_END_MAX     = 16
 
 CARD_W      = 290
 CARD_H      = 430
@@ -271,15 +275,17 @@ class CharacterSelectScreen:
         self.surface.blit(tag_surf, tag_surf.get_rect(
             centerx=rect.centerx, top=div_y + 70))
 
-        # Stat bars
-        self._draw_stat_bar(rect.x + 18, div_y + 95,  rect.w - 36,
-                            "HP",   char["hp"],       _HP_MAX,      (180,  60,  60))
-        self._draw_stat_bar(rect.x + 18, div_y + 117, rect.w - 36,
-                            "STAM", char["stamina"],  _STAMINA_MAX, ( 60, 110, 200))
-        self._draw_stat_bar(rect.x + 18, div_y + 139, rect.w - 36,
-                            "STR",  char["strength"], _STR_MAX,     (200,  95,  50))
-        self._draw_stat_bar(rect.x + 18, div_y + 161, rect.w - 36,
-                            "AGI",  char["agility"],  _AGI_MAX,     (200, 175,  55))
+        # Stat bars (5 stats at 20px spacing)
+        self._draw_stat_bar(rect.x + 18, div_y + 88,  rect.w - 36,
+                            "HP",   char["hp"],         _HP_MAX,      (180,  60,  60))
+        self._draw_stat_bar(rect.x + 18, div_y + 108, rect.w - 36,
+                            "STAM", char["stamina"],    _STAMINA_MAX, ( 60, 110, 200))
+        self._draw_stat_bar(rect.x + 18, div_y + 128, rect.w - 36,
+                            "STR",  char["strength"],   _STR_MAX,     (200,  95,  50))
+        self._draw_stat_bar(rect.x + 18, div_y + 148, rect.w - 36,
+                            "AGI",  char["agility"],    _AGI_MAX,     (200, 175,  55))
+        self._draw_stat_bar(rect.x + 18, div_y + 168, rect.w - 36,
+                            "END",  char["endurance"],  _END_MAX,     ( 55, 185, 165))
 
         # Selected indicator
         if selected:

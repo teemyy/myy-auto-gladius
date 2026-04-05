@@ -13,25 +13,28 @@ class Player(BaseEntity):
     one weapon + one armor equipment slot.
 
     Stats:
-        strength  -- increases attack damage dealt; increases physical damage reduction
-        agility   -- increases crit chance %; increases evasion chance %
+        strength   -- increases attack damage dealt; increases physical damage reduction
+        agility    -- increases crit chance %; increases evasion chance %
+        endurance  -- governs max stamina pool; training END raises max_stamina
 
     All default stat values are loaded from settings.py — never hardcoded here.
     """
 
     def __init__(
         self,
-        name:     str,
-        hp:       int,
-        stamina:  int,
-        gold:     int,
-        strength: int,
-        agility:  int,
+        name:      str,
+        hp:        int,
+        stamina:   int,
+        gold:      int,
+        strength:  int,
+        agility:   int,
+        endurance: int,
     ):
         super().__init__(name, hp, stamina)
-        self.gold:     int   = gold
-        self.strength: int   = strength  # damage bonus + physical damage reduction
-        self.agility:  int   = agility   # crit chance % + evasion chance %
+        self.gold:      int   = gold
+        self.strength:  int   = strength   # damage bonus + physical damage reduction
+        self.agility:   int   = agility    # crit chance % + evasion chance %
+        self.endurance: int   = endurance  # governs max stamina pool
 
         self.weapon:   dict | None = None   # loaded weapon data dict
         self.armor:    dict | None = None   # loaded armor data dict
@@ -103,7 +106,11 @@ class Player(BaseEntity):
         pass
 
     def train_agility(self) -> None:
-        """Increase agility by 1 % (called by Training Ground)."""
+        """Increase agility by 1 point (called by Training Ground)."""
+        pass
+
+    def train_endurance(self, stamina_per_end: int = 5) -> None:
+        """Increase endurance by 1 point and raise max_stamina by stamina_per_end."""
         pass
 
     # ── Serialisation ────────────────────────────────────────────────────────

@@ -101,27 +101,28 @@ class CombatResolver:
     ) -> RoundResult:
         """Resolve one full round and return a detailed RoundResult.
 
-        Steps:
-        1. Determine who hits via RPS_TABLE lookup.
-        2. Roll evasion for the defender (agility-based) — a successful dodge
-           cancels the hit entirely, regardless of RPS outcome.
-        3. For each hit: calculate base damage from weapon data, then add
-           attacker's STR bonus (strength * STR_DAMAGE_FACTOR).
-        4. Apply material vs armor reduction via MATERIAL_ARMOR_TABLE, then
-           apply defender's STR reduction (strength * STR_REDUCTION_FACTOR).
-        5. Roll for critical hit using attacker's agility stat.
-        6. Select target limb via LimbSystem.distribute_damage().
-        7. Apply damage to entity HP and LimbSystem.
-        8. Apply stamina delta for both sides via STAMINA_DELTA.
-        9. Append human-readable lines to result.log.
+        Order of operations for each potential hit:
+
+        1.  RPS lookup  — determine who lands a hit via RPS_TABLE.
+        2.  Evasion check (BEFORE damage) — roll_evasion(defender.agility);
+            full miss if triggered; skip all remaining steps for that hit.
+        3.  Base damage — read weapon data: damage[action].
+        4.  STR damage bonus — base × (1 + attacker.strength × STR_DAMAGE_FACTOR).
+        5.  Armor DR — apply MATERIAL_ARMOR_TABLE[damage_type][armor_type].
+        6.  STR damage reduction — × (1 - defender.strength × STR_REDUCTION_FACTOR).
+        7.  Crit check (AFTER hit confirmed) — roll_critical(attacker.agility);
+            if True: final damage × 2; also roll for limb injury on defender.
+        8.  Apply damage to HP and LimbSystem.
+        9.  Stamina delta — apply STAMINA_DELTA[action] to both sides.
+        10. Append human-readable lines to result.log.
         """
         pass
 
     # ── Damage calculation ───────────────────────────────────────────────────
 
-    # STR scaling constants (not hardcoded stats — tweak here only)
-    STR_DAMAGE_FACTOR    = 0.5   # damage bonus per STR point
-    STR_REDUCTION_FACTOR = 0.01  # fraction of incoming damage blocked per STR point
+    # STR scaling constants — tune here only, never in calling code
+    STR_DAMAGE_FACTOR    = 0.02   # +2 % damage per STR point
+    STR_REDUCTION_FACTOR = 0.01   # −1 % incoming damage per STR point (after armor)
 
     def calculate_damage(
         self,
@@ -131,29 +132,34 @@ class CombatResolver:
         attacker_str: int   = 0,
         defender_str: int   = 0,
         is_crit:      bool  = False,
-        crit_mult:    float = 1.5,
     ) -> int:
-        """Apply STR bonuses, armor reduction, and optional crit to base_damage.
+        """Apply the full damage pipeline and return final integer damage.
 
-        Formula:
-            raw     = (base_damage + attacker_str * STR_DAMAGE_FACTOR)
-                      × MATERIAL_ARMOR_TABLE[damage_type][armor_type]
-            reduced = raw × (1 - defender_str * STR_REDUCTION_FACTOR)
-            final   = reduced × crit_mult  (if is_crit)
+        Formula (applied in order):
+            str_boosted  = base_damage × (1 + attacker_str × STR_DAMAGE_FACTOR)
+            after_armor  = str_boosted × MATERIAL_ARMOR_TABLE[damage_type][armor_type]
+            after_str_dr = after_armor × (1 − defender_str × STR_REDUCTION_FACTOR)
+            final        = after_str_dr × 2  (if is_crit, doubles final damage)
 
         Result is always at least 1.
+        Precondition: roll_evasion() has already been checked and returned False.
         """
         pass
 
     def roll_critical(self, agility: int) -> bool:
-        """Return True with probability agility / 100 (crit chance)."""
+        """Return True with probability agility / 100.
+
+        Called AFTER a hit is confirmed (evasion already failed).
+        On True: damage is doubled AND a limb injury roll is triggered.
+        """
         pass
 
     def roll_evasion(self, agility: int) -> bool:
-        """Return True with probability agility / 100 (evasion chance).
+        """Return True with probability agility / 100.
 
-        A successful evasion cancels the incoming hit entirely.
-        Uses the same probability as crit but is an independent roll.
+        Called BEFORE damage calculation.  On True: the hit is a full miss —
+        no damage, no limb roll, no crit possible for this hit.
+        Independent roll from roll_critical.
         """
         pass
 

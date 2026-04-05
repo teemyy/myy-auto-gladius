@@ -29,7 +29,7 @@ class TownScreen:
         "main"      -- hub overview, choose a location
         "smithy"    -- weapon buy/sell/upgrade UI
         "store"     -- armor buy/sell UI
-        "training"  -- spend gold for +1 agility
+        "training"  -- invest gold in STR, AGI, or END (permanent)
         "healer"    -- select limbs to restore; shows cost per limb
     """
 
@@ -125,16 +125,18 @@ class TownScreen:
         hp_label = font_body.render(f"HP  {self.player.hp} / {self.player.max_hp}", True, (180, 80, 80))
         surface.blit(hp_label, (info_rect.x + 18, info_rect.y + 102))
 
-        str_label = font_body.render(f"STR  {self.player.strength}", True, (200, 95, 50))
-        agi_label = font_body.render(f"AGI  {self.player.agility}", True, (200, 175, 55))
-        surface.blit(str_label, (info_rect.x + 18,  info_rect.y + 130))
-        surface.blit(agi_label, (info_rect.x + 120, info_rect.y + 130))
+        str_label = font_body.render(f"STR  {self.player.strength}", True, (200,  95,  50))
+        agi_label = font_body.render(f"AGI  {self.player.agility}", True, (200, 175,  55))
+        end_label = font_body.render(f"END  {self.player.endurance}", True, ( 55, 185, 165))
+        surface.blit(str_label, (info_rect.x + 18,  info_rect.y + 128))
+        surface.blit(agi_label, (info_rect.x + 120, info_rect.y + 128))
+        surface.blit(end_label, (info_rect.x + 18,  info_rect.y + 150))
 
         # ── Location menu ──────────────────────────────────────────────────
         locations = [
             ("1", "Smithy",          "(coming soon)", (160, 130, 60)),
             ("2", "Store",           "(coming soon)", (160, 130, 60)),
-            ("3", "Training Ground", "(coming soon)", (160, 130, 60)),
+            ("3", "Training Ground", "Invest gold → +1 STR / AGI / END  (coming soon)", (160, 130, 60)),
             ("4", "Healer",          "(coming soon)", (160, 130, 60)),
             ("5", "Gate",            "→ Proceed to Stage " + str(self.stage), ( 80, 200,  80)),
         ]
@@ -177,7 +179,7 @@ class TownScreen:
         pass
 
     def _draw_training(self) -> None:
-        """Render training prompt: current agility, cost, confirm button."""
+        """Render training menu: choose STR, AGI, or END; show current value and gold cost."""
         pass
 
     def _draw_healer(self) -> None:
@@ -195,7 +197,7 @@ class TownScreen:
         pass
 
     def _handle_training_input(self, event: pygame.event.Event) -> None:
-        """Confirm agility training if player has enough gold."""
+        """Select stat (STR/AGI/END) and confirm training if player has enough gold."""
         pass
 
     def _handle_healer_input(self, event: pygame.event.Event) -> None:
@@ -212,6 +214,9 @@ class TownScreen:
         """Return the gold cost to fully restore a limb (scales with damage)."""
         pass
 
-    def _training_cost(self, current_agility: int) -> int:
-        """Return the gold cost for the next +1 agility point."""
+    def _training_cost(self, stat: str, current_value: int) -> int:
+        """Return the gold cost for the next +1 point in the given stat (STR/AGI/END).
+
+        Cost scales with current_value so repeated investment gets more expensive.
+        """
         pass
