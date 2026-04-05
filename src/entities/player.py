@@ -9,8 +9,12 @@ if TYPE_CHECKING:
 class Player(BaseEntity):
     """The player character.
 
-    Extends BaseEntity with gold, agility (crit %), a LimbSystem, and
+    Extends BaseEntity with gold, STR, AGI, a LimbSystem, and
     one weapon + one armor equipment slot.
+
+    Stats:
+        strength  -- increases attack damage dealt; increases physical damage reduction
+        agility   -- increases crit chance %; increases evasion chance %
 
     All default stat values are loaded from settings.py — never hardcoded here.
     """
@@ -21,11 +25,13 @@ class Player(BaseEntity):
         hp:       int,
         stamina:  int,
         gold:     int,
+        strength: int,
         agility:  int,
     ):
         super().__init__(name, hp, stamina)
         self.gold:     int   = gold
-        self.agility:  int   = agility   # crit chance as integer %
+        self.strength: int   = strength  # damage bonus + physical damage reduction
+        self.agility:  int   = agility   # crit chance % + evasion chance %
 
         self.weapon:   dict | None = None   # loaded weapon data dict
         self.armor:    dict | None = None   # loaded armor data dict
@@ -90,6 +96,10 @@ class Player(BaseEntity):
 
     def advance_stage(self) -> None:
         """Increment stage counter and record the victory."""
+        pass
+
+    def train_strength(self) -> None:
+        """Increase strength by 1 point (called by Training Ground)."""
         pass
 
     def train_agility(self) -> None:

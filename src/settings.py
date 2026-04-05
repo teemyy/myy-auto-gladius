@@ -23,18 +23,19 @@ BOSS_STAGES        = (4, 8, 12)
 PLAYER_START_HP      = 120
 PLAYER_START_STAMINA = 100
 PLAYER_START_GOLD    = 80
-PLAYER_START_AGILITY = 10   # crit chance %
+PLAYER_START_STR     = 10   # strength:  damage bonus + physical damage reduction
+PLAYER_START_AGI     = 10   # agility:   crit chance % + evasion chance %
 
 # Limbs
 LIMBS            = ("Head", "Torso", "L-Arm", "R-Arm", "L-Leg", "R-Leg")
 MAX_INTEGRITY    = 100
 
-# Stamina costs per action
-STAMINA_COST = {
-    "Heavy":  20,
-    "Quick":  10,
-    "Defend": 12,
-    "Ranged": 8,
+# Stamina change per action: negative = consumed, positive = regenerated
+STAMINA_DELTA = {
+    "Heavy":  -20,
+    "Quick":  -10,
+    "Defend": +25,   # Defend restores stamina
+    "Ranged":  -8,
 }
 
 # Equipment grades in ascending order

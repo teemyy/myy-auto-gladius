@@ -41,9 +41,10 @@ When neither action beats the other (e.g. Heavy vs Heavy) both sides trade hits.
 | Stat | Description |
 |------|-------------|
 | HP | Hit points; reaching 0 = death |
-| Stamina | Spent each action; recovers between rounds; 0 stamina forces Defend |
+| Stamina | Consumed by Heavy and Quick attacks; **regenerates when choosing Defend**; 0 stamina forces Defend |
 | Gold | Currency for the town hub |
-| Agility | Crit chance % (default 10 %; trainable) |
+| STR (Strength) | Increases attack damage dealt; increases physical damage reduction received |
+| AGI (Agility) | Increases crit chance %; increases evasion chance % (dodge incoming attacks entirely) |
 
 ---
 

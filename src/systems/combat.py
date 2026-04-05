@@ -103,35 +103,58 @@ class CombatResolver:
 
         Steps:
         1. Determine who hits via RPS_TABLE lookup.
-        2. For each hit: calculate base damage from weapon data.
-        3. Apply material vs armor reduction via MATERIAL_ARMOR_TABLE.
-        4. Roll for critical hit using attacker's agility stat.
-        5. Select target limb via LimbSystem.distribute_damage().
-        6. Apply damage to entity HP and LimbSystem.
-        7. Consume stamina for both sides.
-        8. Append human-readable lines to result.log.
+        2. Roll evasion for the defender (agility-based) — a successful dodge
+           cancels the hit entirely, regardless of RPS outcome.
+        3. For each hit: calculate base damage from weapon data, then add
+           attacker's STR bonus (strength * STR_DAMAGE_FACTOR).
+        4. Apply material vs armor reduction via MATERIAL_ARMOR_TABLE, then
+           apply defender's STR reduction (strength * STR_REDUCTION_FACTOR).
+        5. Roll for critical hit using attacker's agility stat.
+        6. Select target limb via LimbSystem.distribute_damage().
+        7. Apply damage to entity HP and LimbSystem.
+        8. Apply stamina delta for both sides via STAMINA_DELTA.
+        9. Append human-readable lines to result.log.
         """
         pass
 
     # ── Damage calculation ───────────────────────────────────────────────────
+
+    # STR scaling constants (not hardcoded stats — tweak here only)
+    STR_DAMAGE_FACTOR    = 0.5   # damage bonus per STR point
+    STR_REDUCTION_FACTOR = 0.01  # fraction of incoming damage blocked per STR point
 
     def calculate_damage(
         self,
         base_damage:  int,
         damage_type:  str,
         armor_type:   str,
-        is_crit:      bool = False,
+        attacker_str: int   = 0,
+        defender_str: int   = 0,
+        is_crit:      bool  = False,
         crit_mult:    float = 1.5,
     ) -> int:
-        """Apply armor reduction and optional crit multiplier to base_damage.
+        """Apply STR bonuses, armor reduction, and optional crit to base_damage.
 
-        base_damage × MATERIAL_ARMOR_TABLE[damage_type][armor_type] × crit_mult
+        Formula:
+            raw     = (base_damage + attacker_str * STR_DAMAGE_FACTOR)
+                      × MATERIAL_ARMOR_TABLE[damage_type][armor_type]
+            reduced = raw × (1 - defender_str * STR_REDUCTION_FACTOR)
+            final   = reduced × crit_mult  (if is_crit)
+
         Result is always at least 1.
         """
         pass
 
     def roll_critical(self, agility: int) -> bool:
-        """Return True with probability agility / 100."""
+        """Return True with probability agility / 100 (crit chance)."""
+        pass
+
+    def roll_evasion(self, agility: int) -> bool:
+        """Return True with probability agility / 100 (evasion chance).
+
+        A successful evasion cancels the incoming hit entirely.
+        Uses the same probability as crit but is an independent roll.
+        """
         pass
 
     # ── RPS resolution ───────────────────────────────────────────────────────

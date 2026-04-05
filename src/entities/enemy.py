@@ -26,6 +26,7 @@ class Enemy(BaseEntity):
         stage:         int,
         hp:            int,
         stamina:       int,
+        strength:      int,
         agility:       int,
         weapon:        dict,
         armor:         dict,
@@ -36,7 +37,8 @@ class Enemy(BaseEntity):
     ):
         super().__init__(name, hp, stamina)
         self.stage:         int   = stage
-        self.agility:       int   = agility
+        self.strength:      int   = strength  # damage bonus + physical damage reduction
+        self.agility:       int   = agility   # crit chance % + evasion chance %
         self.weapon:        dict  = weapon
         self.armor:         dict  = armor
         self.ai_difficulty: str   = ai_difficulty

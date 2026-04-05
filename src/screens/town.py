@@ -125,8 +125,10 @@ class TownScreen:
         hp_label = font_body.render(f"HP  {self.player.hp} / {self.player.max_hp}", True, (180, 80, 80))
         surface.blit(hp_label, (info_rect.x + 18, info_rect.y + 102))
 
-        ag_label = font_body.render(f"Agility  {self.player.agility} %", True, (200, 175, 55))
-        surface.blit(ag_label, (info_rect.x + 18, info_rect.y + 130))
+        str_label = font_body.render(f"STR  {self.player.strength}", True, (200, 95, 50))
+        agi_label = font_body.render(f"AGI  {self.player.agility}", True, (200, 175, 55))
+        surface.blit(str_label, (info_rect.x + 18,  info_rect.y + 130))
+        surface.blit(agi_label, (info_rect.x + 120, info_rect.y + 130))
 
         # ── Location menu ──────────────────────────────────────────────────
         locations = [
