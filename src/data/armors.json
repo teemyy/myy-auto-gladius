@@ -1,0 +1,101 @@
+{
+  "armor_types": ["Cloth", "Leather", "Scale", "Chainmail", "Plate"],
+  "note": "damage_reduction values are multipliers applied to incoming damage (lower = more protection).",
+  "armors": [
+    {
+      "id": "cloth_robe",
+      "name": "Cloth Robe",
+      "type": "Cloth",
+      "grade_level": 1,
+      "defense": 2,
+      "damage_reduction": {
+        "slashing": 1.00,
+        "piercing": 1.00,
+        "crushing": 1.00,
+        "ranged":   1.00
+      },
+      "agility_modifier": 0,
+      "strengths": [],
+      "weaknesses": ["slashing", "piercing", "crushing", "ranged"],
+      "price": 25,
+      "sell_price": 12,
+      "description": "Barely qualifies as armor. Better than nothing — barely."
+    },
+    {
+      "id": "leather_armor",
+      "name": "Leather Armor",
+      "type": "Leather",
+      "grade_level": 2,
+      "defense": 8,
+      "damage_reduction": {
+        "slashing": 0.70,
+        "piercing": 1.20,
+        "crushing": 1.15,
+        "ranged":   0.90
+      },
+      "agility_modifier": 0,
+      "strengths": ["slashing"],
+      "weaknesses": ["piercing", "crushing"],
+      "price": 120,
+      "sell_price": 60,
+      "description": "Thick-tanned hide. Deflects glancing sword cuts well."
+    },
+    {
+      "id": "scale_armor",
+      "name": "Scale Armor",
+      "type": "Scale",
+      "grade_level": 3,
+      "defense": 14,
+      "damage_reduction": {
+        "slashing": 0.85,
+        "piercing": 0.60,
+        "crushing": 1.20,
+        "ranged":   0.85
+      },
+      "agility_modifier": 0,
+      "strengths": ["piercing"],
+      "weaknesses": ["crushing"],
+      "price": 280,
+      "sell_price": 140,
+      "description": "Overlapping dragon-lizard scales. Spears skitter off harmlessly."
+    },
+    {
+      "id": "chainmail",
+      "name": "Chainmail",
+      "type": "Chainmail",
+      "grade_level": 4,
+      "defense": 18,
+      "damage_reduction": {
+        "slashing": 0.65,
+        "piercing": 0.90,
+        "crushing": 1.10,
+        "ranged":   0.75
+      },
+      "agility_modifier": 0,
+      "strengths": ["slashing", "ranged"],
+      "weaknesses": ["crushing"],
+      "price": 450,
+      "sell_price": 225,
+      "description": "Interlocked rings shrug off sword edges. Maces find the gaps."
+    },
+    {
+      "id": "plate_armor",
+      "name": "Plate Armor",
+      "type": "Plate",
+      "grade_level": 5,
+      "defense": 28,
+      "damage_reduction": {
+        "slashing": 0.80,
+        "piercing": 0.85,
+        "crushing": 0.90,
+        "ranged":   0.65
+      },
+      "agility_modifier": -5,
+      "strengths": ["ranged", "slashing", "piercing"],
+      "weaknesses": [],
+      "price": 750,
+      "sell_price": 375,
+      "description": "Full-body plate. The best defense money can buy. Heavy enough to tire you out."
+    }
+  ]
+}

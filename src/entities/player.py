@@ -1,0 +1,108 @@
+from __future__ import annotations
+from .entity import BaseEntity
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..systems.limb_system import LimbSystem
+
+
+class Player(BaseEntity):
+    """The player character.
+
+    Extends BaseEntity with gold, agility (crit %), a LimbSystem, and
+    one weapon + one armor equipment slot.
+
+    All default stat values are loaded from settings.py — never hardcoded here.
+    """
+
+    def __init__(
+        self,
+        name:     str,
+        hp:       int,
+        stamina:  int,
+        gold:     int,
+        agility:  int,
+    ):
+        super().__init__(name, hp, stamina)
+        self.gold:     int   = gold
+        self.agility:  int   = agility   # crit chance as integer %
+
+        self.weapon:   dict | None = None   # loaded weapon data dict
+        self.armor:    dict | None = None   # loaded armor data dict
+        self.limbs:    "LimbSystem | None" = None   # injected after construction
+
+        self.stage:    int  = 1
+        self.victories: int = 0
+
+    # ── Equipment ────────────────────────────────────────────────────────────
+
+    def equip_weapon(self, weapon: dict) -> dict | None:
+        """Equip a weapon dict; return the previously equipped weapon or None."""
+        pass
+
+    def unequip_weapon(self) -> dict | None:
+        """Remove and return the equipped weapon."""
+        pass
+
+    def equip_armor(self, armor: dict) -> dict | None:
+        """Equip an armor dict; return the previously equipped armor or None."""
+        pass
+
+    def unequip_armor(self) -> dict | None:
+        """Remove and return the equipped armor."""
+        pass
+
+    def has_ranged_weapon(self) -> bool:
+        """Return True if the equipped weapon supports the Ranged action."""
+        pass
+
+    # ── Actions ──────────────────────────────────────────────────────────────
+
+    def available_actions(self) -> list[str]:
+        """Return the list of actions the player can legally choose this round.
+
+        Filters out:
+        - Ranged if no ranged weapon is equipped
+        - Quick if L-Arm is destroyed (limb wound effect)
+        - All offensive actions if R-Arm is destroyed (forced Defend)
+        - All actions except Defend if stamina is zero
+        """
+        pass
+
+    def choose_action(self, action: str) -> bool:
+        """Validate and commit the player's chosen action for this round.
+
+        Returns False if the action is not in available_actions().
+        """
+        pass
+
+    # ── Economy ──────────────────────────────────────────────────────────────
+
+    def earn_gold(self, amount: int) -> None:
+        """Add gold to the player's balance."""
+        pass
+
+    def spend_gold(self, amount: int) -> bool:
+        """Deduct gold. Returns False without modifying balance if insufficient."""
+        pass
+
+    # ── Progression ──────────────────────────────────────────────────────────
+
+    def advance_stage(self) -> None:
+        """Increment stage counter and record the victory."""
+        pass
+
+    def train_agility(self) -> None:
+        """Increase agility by 1 % (called by Training Ground)."""
+        pass
+
+    # ── Serialisation ────────────────────────────────────────────────────────
+
+    def to_dict(self) -> dict:
+        """Serialise full player state for save files."""
+        pass
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Player":
+        """Reconstruct a Player from a saved dict."""
+        pass
