@@ -1,14 +1,14 @@
 import sys
 import pygame
 
-SCREEN_WIDTH  = 1280
-SCREEN_HEIGHT = 720
-FPS           = 60
-TITLE         = "Myy Auto Gladius"
+from src.settings import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE
+from src.screens.main_menu        import MainMenuScreen
+from src.screens.character_select import CharacterSelectScreen
+from src.screens.town             import TownScreen
+from src.entities.player          import Player
 
-DARK_BG   = ( 15,  10,   8)
-GOLD_TEXT = (220, 175,  60)
-GRAY      = (120, 120, 120)
+TOWN_START_GOLD = 150
+MAX_DT          = 1 / 20   # cap to prevent spiral-of-death on lag spikes
 
 
 def main() -> None:
@@ -17,34 +17,101 @@ def main() -> None:
     pygame.display.set_caption(TITLE)
     clock = pygame.time.Clock()
 
-    font_large  = pygame.font.SysFont(None, 72)
-    font_small  = pygame.font.SysFont(None, 32)
+    current = MainMenuScreen(screen)
 
     running = True
     while running:
-        # ── Events ──────────────────────────────────────────────────────────
+        dt = min(clock.tick(FPS) / 1000.0, MAX_DT)
+
+        # ── Events ────────────────────────────────────────────────────────
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                running = False
+            else:
+                current.handle_event(event)
 
-        # ── Draw ─────────────────────────────────────────────────────────────
-        screen.fill(DARK_BG)
+        # ── Update ────────────────────────────────────────────────────────
+        current.update(dt)
 
-        stage_surf = font_large.render("Stage 1", True, GOLD_TEXT)
-        stage_rect = stage_surf.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
-        screen.blit(stage_surf, stage_rect)
-
-        hint_surf = font_small.render("ESC to quit", True, GRAY)
-        hint_rect = hint_surf.get_rect(bottomright=(SCREEN_WIDTH - 16, SCREEN_HEIGHT - 12))
-        screen.blit(hint_surf, hint_rect)
-
+        # ── Draw ──────────────────────────────────────────────────────────
+        current.draw()
         pygame.display.flip()
-        clock.tick(FPS)
+
+        # ── Screen transitions ────────────────────────────────────────────
+        if not current.is_done():
+            continue
+
+        result = current.get_result()
+
+        if isinstance(current, MainMenuScreen):
+            if result == "quit":
+                running = False
+            elif result == "start":
+                current = CharacterSelectScreen(screen)
+            elif result == "settings":
+                current = _settings_placeholder(screen)
+
+        elif isinstance(current, CharacterSelectScreen):
+            if result is None:
+                # Player pressed ESC — go back to main menu
+                current = MainMenuScreen(screen)
+            else:
+                # Confirmed character — create player and enter town
+                player = Player(
+                    name    = result["name"],
+                    hp      = result["hp"],
+                    stamina = result["stamina"],
+                    gold    = TOWN_START_GOLD,
+                    agility = result["agility"],
+                )
+                current = TownScreen(screen, player, equipment=None, stage=1)
+
+        elif isinstance(current, TownScreen):
+            # Arena not yet implemented — return to main menu for now
+            current = MainMenuScreen(screen)
+
+        elif isinstance(current, _SettingsPlaceholder):
+            current = MainMenuScreen(screen)
 
     pygame.quit()
     sys.exit()
+
+
+# ── Settings placeholder ──────────────────────────────────────────────────────
+
+class _SettingsPlaceholder:
+    """Minimal 'coming soon' screen for Settings."""
+
+    def __init__(self, surface: pygame.Surface):
+        self.surface = surface
+        self._done   = False
+        self._f_big  = pygame.font.SysFont(None, 56)
+        self._f_hint = pygame.font.SysFont(None, 32)
+
+    def update(self, dt: float) -> None:
+        pass
+
+    def draw(self) -> None:
+        self.surface.fill((15, 10, 8))
+        msg  = self._f_big.render("Settings — Coming Soon", True, (180, 145, 55))
+        hint = self._f_hint.render("Press ESC to go back", True, (100, 90, 70))
+        W, H = SCREEN_WIDTH, SCREEN_HEIGHT
+        self.surface.blit(msg,  msg.get_rect(center=(W // 2, H // 2 - 30)))
+        self.surface.blit(hint, hint.get_rect(center=(W // 2, H // 2 + 30)))
+
+    def handle_event(self, event: pygame.event.Event) -> None:
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self._done = True
+
+    def is_done(self) -> bool:
+        return self._done
+
+    def get_result(self) -> None:
+        return None
+
+
+def _settings_placeholder(surface: pygame.Surface) -> _SettingsPlaceholder:
+    return _SettingsPlaceholder(surface)
 
 
 if __name__ == "__main__":

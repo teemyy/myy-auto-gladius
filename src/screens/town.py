@@ -61,26 +61,110 @@ class TownScreen:
     # ── Lifecycle ────────────────────────────────────────────────────────────
 
     def update(self, dt: float) -> None:
-        """Update any animated elements."""
         pass
 
     def draw(self) -> None:
-        """Render the active sub-screen."""
-        pass
+        if self.state == "main":
+            self._draw_main_hub()
 
     def handle_event(self, event: pygame.event.Event) -> None:
-        """Route keyboard input to the active sub-screen handler."""
-        pass
+        if event.type != pygame.KEYDOWN:
+            return
+        if self.state == "main":
+            loc = self.LOCATION_KEYS.get(event.key)
+            if loc == TownLocation.GATE or event.key == pygame.K_RETURN:
+                self._done = True
+            elif loc in (TownLocation.SMITHY, TownLocation.STORE,
+                         TownLocation.TRAINING, TownLocation.HEALER):
+                pass   # sub-locations not yet implemented
 
     def is_done(self) -> bool:
-        """Return True once the player leaves through the Gate."""
-        pass
+        return self._done
+
+    def get_result(self) -> str:
+        return "proceed"
 
     # ── Sub-screen renderers ─────────────────────────────────────────────────
 
     def _draw_main_hub(self) -> None:
-        """Render the hub overview with gold balance and location menu."""
-        pass
+        from ..settings import (SCREEN_WIDTH, SCREEN_HEIGHT, DARK_BG,
+                                GOLD_TEXT, WHITE, GRAY, PANEL_BG, DARK_GRAY)
+
+        surface = self.surface
+        surface.fill(DARK_BG)
+
+        font_title  = pygame.font.SysFont(None, 72)
+        font_sub    = pygame.font.SysFont(None, 34)
+        font_body   = pygame.font.SysFont(None, 30)
+        font_hint   = pygame.font.SysFont(None, 26)
+        W, H        = SCREEN_WIDTH, SCREEN_HEIGHT
+
+        # ── Title bar ──────────────────────────────────────────────────────
+        pygame.draw.rect(surface, (22, 16, 10), (0, 0, W, 72))
+        pygame.draw.line(surface, (70, 52, 22), (0, 72), (W, 72), 2)
+
+        title = font_title.render("TOWN HUB", True, GOLD_TEXT)
+        surface.blit(title, title.get_rect(centerx=W // 2, centery=36))
+
+        stage_surf = font_sub.render(f"Stage {self.stage}", True, (155, 125, 55))
+        surface.blit(stage_surf, (W - 160, 24))
+
+        # ── Player info panel ──────────────────────────────────────────────
+        info_rect = pygame.Rect(40, 100, 340, 160)
+        pygame.draw.rect(surface, PANEL_BG, info_rect, border_radius=6)
+        pygame.draw.rect(surface, (55, 42, 22), info_rect, 1, border_radius=6)
+
+        name_surf = font_sub.render(self.player.name, True, WHITE)
+        surface.blit(name_surf, (info_rect.x + 18, info_rect.y + 18))
+
+        gold_label = font_body.render("Gold", True, GRAY)
+        gold_val   = font_sub.render(str(self.player.gold), True, GOLD_TEXT)
+        surface.blit(gold_label, (info_rect.x + 18, info_rect.y + 62))
+        surface.blit(gold_val,   (info_rect.x + 80, info_rect.y + 58))
+
+        hp_label = font_body.render(f"HP  {self.player.hp} / {self.player.max_hp}", True, (180, 80, 80))
+        surface.blit(hp_label, (info_rect.x + 18, info_rect.y + 102))
+
+        ag_label = font_body.render(f"Agility  {self.player.agility} %", True, (200, 175, 55))
+        surface.blit(ag_label, (info_rect.x + 18, info_rect.y + 130))
+
+        # ── Location menu ──────────────────────────────────────────────────
+        locations = [
+            ("1", "Smithy",          "(coming soon)", (160, 130, 60)),
+            ("2", "Store",           "(coming soon)", (160, 130, 60)),
+            ("3", "Training Ground", "(coming soon)", (160, 130, 60)),
+            ("4", "Healer",          "(coming soon)", (160, 130, 60)),
+            ("5", "Gate",            "→ Proceed to Stage " + str(self.stage), ( 80, 200,  80)),
+        ]
+
+        menu_rect = pygame.Rect(440, 100, 780, 500)
+        pygame.draw.rect(surface, PANEL_BG, menu_rect, border_radius=6)
+        pygame.draw.rect(surface, (55, 42, 22), menu_rect, 1, border_radius=6)
+
+        header = font_sub.render("Where would you like to go?", True, (155, 125, 55))
+        surface.blit(header, (menu_rect.x + 20, menu_rect.y + 20))
+        pygame.draw.line(surface, (55, 42, 22),
+                         (menu_rect.x + 10, menu_rect.y + 58),
+                         (menu_rect.right - 10, menu_rect.y + 58), 1)
+
+        for i, (key, name, desc, color) in enumerate(locations):
+            row_y    = menu_rect.y + 76 + i * 72
+            row_rect = pygame.Rect(menu_rect.x + 12, row_y, menu_rect.w - 24, 60)
+            bg       = (32, 24, 14) if name == "Gate" else (24, 18, 12)
+            pygame.draw.rect(surface, bg, row_rect, border_radius=4)
+
+            key_surf  = font_sub.render(f"[{key}]", True, GOLD_TEXT)
+            name_surf = font_sub.render(name, True, color)
+            desc_surf = font_body.render(desc, True, GRAY)
+
+            surface.blit(key_surf,  (row_rect.x + 14, row_rect.y + 8))
+            surface.blit(name_surf, (row_rect.x + 68, row_rect.y + 8))
+            surface.blit(desc_surf, (row_rect.x + 68, row_rect.y + 36))
+
+        # ── Hint ───────────────────────────────────────────────────────────
+        hint = font_hint.render("[1–4] Visit location     [5] / [ENTER] Proceed to next stage",
+                                True, (65, 55, 40))
+        surface.blit(hint, hint.get_rect(center=(W // 2, H - 22)))
 
     def _draw_smithy(self) -> None:
         """Render weapon shop: current weapon, available stock, upgrade option."""
