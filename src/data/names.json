@@ -1,0 +1,27 @@
+{
+  "gladiator_first": [
+    "Aiko", "Yumi", "Hana", "Rei", "Sora", "Nami", "Kira", "Miku",
+    "Rin", "Saya", "Yuki", "Haru", "Nao", "Emi", "Tsuyu", "Akane",
+    "Mizuki", "Izumi", "Koharu", "Asahi", "Shiori", "Kasumi", "Hotaru",
+    "Ayame", "Momoko", "Sakura", "Kaede", "Himari", "Yuzu", "Riko"
+  ],
+  "gladiator_last": [
+    "no Tsurugi", "the Swift", "Ironblow", "Crimsonblade", "Stormfoot",
+    "of the Dusk", "Silverwind", "Firethorn", "the Relentless", "Goldmantle",
+    "Ashkick", "Brightedge", "Steelrose", "the Unyielding", "Shadowstrike"
+  ],
+  "team_names": [
+    "The Azure Blades",
+    "The Crimson Lotus",
+    "The Iron Maidens",
+    "The Silver Storm",
+    "The Gilded Spears",
+    "The Obsidian Guard",
+    "The Ember Vanguard",
+    "The Moonlit Circle",
+    "The Sapphire Lions",
+    "The Verdant Fang",
+    "The Ashen Crown",
+    "The Starfall Brigade"
+  ]
+}

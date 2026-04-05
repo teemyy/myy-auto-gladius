@@ -1,0 +1,74 @@
+[
+  {
+    "id": "iron_sword",
+    "name": "Iron Sword",
+    "damage_bonus": 5,
+    "range_bonus": 0,
+    "effects": [],
+    "price": 100,
+    "sprite": "items/iron_sword.png"
+  },
+  {
+    "id": "steel_sword",
+    "name": "Steel Sword",
+    "damage_bonus": 10,
+    "range_bonus": 0,
+    "effects": [],
+    "price": 200,
+    "sprite": "items/steel_sword.png"
+  },
+  {
+    "id": "short_spear",
+    "name": "Short Spear",
+    "damage_bonus": 4,
+    "range_bonus": 20,
+    "effects": [],
+    "price": 150,
+    "sprite": "items/short_spear.png"
+  },
+  {
+    "id": "war_spear",
+    "name": "War Spear",
+    "damage_bonus": 8,
+    "range_bonus": 35,
+    "effects": [],
+    "price": 280,
+    "sprite": "items/war_spear.png"
+  },
+  {
+    "id": "short_bow",
+    "name": "Short Bow",
+    "damage_bonus": 6,
+    "range_bonus": 80,
+    "effects": ["ranged"],
+    "price": 220,
+    "sprite": "items/short_bow.png"
+  },
+  {
+    "id": "long_bow",
+    "name": "Long Bow",
+    "damage_bonus": 10,
+    "range_bonus": 140,
+    "effects": ["ranged"],
+    "price": 380,
+    "sprite": "items/long_bow.png"
+  },
+  {
+    "id": "mace",
+    "name": "Mace",
+    "damage_bonus": 8,
+    "range_bonus": 0,
+    "effects": ["knockback"],
+    "price": 180,
+    "sprite": "items/mace.png"
+  },
+  {
+    "id": "morningstar",
+    "name": "Morningstar",
+    "damage_bonus": 14,
+    "range_bonus": 0,
+    "effects": ["knockback"],
+    "price": 350,
+    "sprite": "items/morningstar.png"
+  }
+]
