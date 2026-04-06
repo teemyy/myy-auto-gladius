@@ -12,6 +12,7 @@ from src.entities.player          import Player
 from src.entities.enemy           import Enemy
 from src.systems.combat           import CombatResolver
 from src.systems.limb_system      import LimbSystem
+from src.systems.equipment        import EquipmentSystem
 
 TOWN_START_GOLD = 150
 MAX_DT          = 1 / 20   # cap to prevent spiral-of-death on lag spikes
@@ -49,6 +50,9 @@ def main() -> None:
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption(TITLE)
     clock = pygame.time.Clock()
+
+    equipment = EquipmentSystem()
+    equipment.load()
 
     current = MainMenuScreen(screen)
 
@@ -104,7 +108,7 @@ def main() -> None:
                 except (StopIteration, KeyError, FileNotFoundError):
                     pass
                 _attach_limbs(player)
-                current = TownScreen(screen, player, equipment=None, stage=player.stage)
+                current = TownScreen(screen, player, equipment=equipment, stage=player.stage)
 
         elif isinstance(current, TownScreen):
             player = current.player
@@ -120,7 +124,7 @@ def main() -> None:
                 reward = current.enemy.get_reward()
                 player.earn_gold(reward["gold"])
                 player.advance_stage()
-                current = TownScreen(screen, player, equipment=None, stage=player.stage)
+                current = TownScreen(screen, player, equipment=equipment, stage=player.stage)
             else:
                 current = _game_over_screen(screen)
 
