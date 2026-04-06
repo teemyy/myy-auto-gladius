@@ -17,6 +17,11 @@ _IDLE_SPRITES: dict[str, str] = {
     "Rei":  "rei_idle.jpg",
 }
 
+# Map enemy id → idle sprite filename
+_ENEMY_SPRITES: dict[str, str] = {
+    "slave_gladiator": "slave_gladiator_idle.jpg",
+}
+
 # ── Layout constants ─────────────────────────────────────────────────────────
 _W, _H = 1280, 720
 
@@ -71,6 +76,11 @@ _MOVE_BTN_H      = 68
 _MOVE_BTN_MARGIN = 18   # from screen edge
 
 _ACTIONS_ORDER = ["Heavy", "Quick", "Defend", "Ranged"]
+
+
+def _enemy_id_from_name(name: str) -> str:
+    """Convert a display name to a snake_case id, e.g. 'Slave Gladiator' → 'slave_gladiator'."""
+    return name.lower().replace(" ", "_")
 
 
 class ArenaScreen:
@@ -327,21 +337,33 @@ class ArenaScreen:
         self._f_hint  = pygame.font.SysFont(None, 22)
         self._f_big   = pygame.font.SysFont(None, 80)
 
-        # Player idle sprite
-        fname = _IDLE_SPRITES.get(self.player.name)
         self._player_sprite: pygame.Surface | None = None
-        if fname:
-            path = os.path.join(_ASSETS, fname)
-            try:
-                raw = pygame.image.load(path).convert()
-                # Remove checkerboard / solid background: sample top-left corner
-                corner = raw.get_at((0, 0))[:3]
-                raw.set_colorkey(corner, pygame.RLEACCEL)
-                self._player_sprite = pygame.transform.smoothscale(
-                    raw, (_SPRITE_W, _SPRITE_H)
-                )
-            except (pygame.error, FileNotFoundError):
-                pass
+        self._enemy_sprite:  pygame.Surface | None = None
+        self._bg_image:      pygame.Surface | None = None
+
+        # Arena background — stretched to fill the arena strip
+        try:
+            raw = pygame.image.load(
+                os.path.join(_ASSETS, "arena_bg_1.jpg")
+            ).convert()
+            self._bg_image = pygame.transform.smoothscale(raw, (_W, _ARENA_H))
+        except (pygame.error, FileNotFoundError):
+            pass
+
+        for attr, fname in (
+            ("_player_sprite", _IDLE_SPRITES.get(self.player.name)),
+            ("_enemy_sprite",  _ENEMY_SPRITES.get(getattr(self.enemy, "id", None) or
+                                                   _enemy_id_from_name(self.enemy.name))),
+        ):
+            if fname:
+                path = os.path.join(_ASSETS, fname)
+                try:
+                    raw    = pygame.image.load(path).convert()
+                    corner = raw.get_at((0, 0))[:3]
+                    raw.set_colorkey(corner, pygame.RLEACCEL)
+                    setattr(self, attr, pygame.transform.smoothscale(raw, (_SPRITE_W, _SPRITE_H)))
+                except (pygame.error, FileNotFoundError):
+                    pass
 
         self._assets_ready = True
 
@@ -370,14 +392,17 @@ class ArenaScreen:
                           hp_txt.get_rect(right=_W - 20, centery=_TOP_BAR_H // 2))
 
     def _draw_arena_floor(self) -> None:
-        for i in range(_ARENA_TILES):
-            tile_x = _ARENA_X + i * _TILE_W
-            color  = (22, 18, 12) if i % 2 == 0 else (26, 20, 14)
-            pygame.draw.rect(self.surface, color,
-                             (tile_x, _ARENA_Y, _TILE_W, _TILE_H))
+        if self._bg_image:
+            self.surface.blit(self._bg_image, (0, _ARENA_Y))
+        else:
+            for i in range(_ARENA_TILES):
+                tile_x = _ARENA_X + i * _TILE_W
+                color  = (22, 18, 12) if i % 2 == 0 else (26, 20, 14)
+                pygame.draw.rect(self.surface, color,
+                                 (tile_x, _ARENA_Y, _TILE_W, _TILE_H))
         pygame.draw.line(self.surface, _DARK_BORDER,
-                         (_ARENA_X, _ARENA_Y + _TILE_H),
-                         (_ARENA_X + _TILE_W * _ARENA_TILES, _ARENA_Y + _TILE_H), 2)
+                         (0, _ARENA_Y + _TILE_H),
+                         (_W, _ARENA_Y + _TILE_H), 2)
 
         # Distance label
         dist = self._distance()
@@ -414,14 +439,22 @@ class ArenaScreen:
             centerx=px_center, bottom=floor_y - _SPRITE_H - 2
         ))
 
-        # ── Enemy — red rectangle ─────────────────────────────────────────
+        # ── Enemy ────────────────────────────────────────────────────────
         ex_center = _ARENA_X + self._enemy_tile * _TILE_W + _TILE_W // 2
-        erx = ex_center - 28
-        ery = floor_y - 100
-        pygame.draw.rect(self.surface, (200, 50, 40), (erx, ery, 56, 100), border_radius=4)
+        if self._enemy_sprite:
+            flipped = pygame.transform.flip(self._enemy_sprite, True, False)
+            esx = ex_center - _SPRITE_W // 2
+            esy = floor_y - _SPRITE_H
+            self.surface.blit(flipped, (esx, esy))
+            ename_top = esy
+        else:
+            erx = ex_center - 28
+            ery = floor_y - 100
+            pygame.draw.rect(self.surface, (200, 50, 40), (erx, ery, 56, 100), border_radius=4)
+            ename_top = ery
 
         ename = self._f_small.render(self.enemy.name[:10], True, _WHITE)
-        self.surface.blit(ename, ename.get_rect(centerx=ex_center, bottom=ery - 2))
+        self.surface.blit(ename, ename.get_rect(centerx=ex_center, bottom=ename_top - 2))
 
         # Last round action labels
         if self.last_result:
@@ -430,7 +463,7 @@ class ArenaScreen:
             self.surface.blit(pa, pa.get_rect(
                 centerx=px_center, bottom=floor_y - _SPRITE_H - 16
             ))
-            self.surface.blit(ea, ea.get_rect(centerx=ex_center, bottom=ery - 16))
+            self.surface.blit(ea, ea.get_rect(centerx=ex_center, bottom=ename_top - 16))
 
     def _draw_status_panels(self) -> None:
         # ── Player panel ─────────────────────────────────────────────────
