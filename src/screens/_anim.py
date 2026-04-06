@@ -228,3 +228,15 @@ def hold_black(frames: int) -> _Track:
     def fn(f: int, st: AState) -> None:
         st.overlay_alpha = 255
     return _Track([_Seg(frames, fn)])
+
+
+def sound_at(callback: Callable[[], None], frame: int = 0) -> _Track:
+    """Fire callback exactly once at the given animation frame.
+
+    The track completes after frame+1 ticks, so it never blocks other tracks
+    from finishing.  Use this to tie sound triggers to specific animation frames.
+    """
+    def fn(f: int, _st: AState) -> None:
+        if f == frame:
+            callback()
+    return _Track([_Seg(frame + 1, fn)])

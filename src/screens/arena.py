@@ -6,15 +6,20 @@ from ._anim import (
     AnimSys, AState,
     quick_atk, heavy_atk, defend_anim,
     hit_flash, sprite_knockback, screen_shake,
-    miss_flash, death_anim, screen_fade, hold_black,
+    miss_flash, death_anim, screen_fade, hold_black, sound_at,
 )
+from ..systems.sound import SoundSystem
 
 if TYPE_CHECKING:
     from ..entities.player import Player
     from ..entities.enemy  import Enemy
     from ..systems.combat  import CombatResolver, RoundResult
 
-_ASSETS = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "images")
+_ASSETS  = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "images")
+_SOUNDS  = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "sounds")
+
+# Frame at which the weapon makes contact for each action (used for impact sounds)
+_CONTACT_FRAME: dict[str, int] = {"Quick": 5, "Heavy": 7, "Ranged": 0}
 
 _IDLE_SPRITES: dict[str, str] = {
     "Yumi": "yumi_idle.jpg",
@@ -116,6 +121,7 @@ class ArenaScreen:
         self._anim = AnimSys()
         self._player_limb_flash: dict[str, int] = {}
         self._enemy_limb_flash:  dict[str, int] = {}
+        self._snd: SoundSystem | None = None  # created in _init_assets
 
         # Clickable rects (populated each draw)
         self._action_btn_rects: dict[str, pygame.Rect] = {}
@@ -236,6 +242,7 @@ class ArenaScreen:
         dist       = self._distance()
         dmg_in     = 0
         is_crit    = False
+        evaded     = False
         pending    = [f"  {self.enemy.name}: {enemy_action}"]
 
         if enemy_action in ("Heavy", "Quick", "Ranged"):
@@ -248,6 +255,7 @@ class ArenaScreen:
                 arm_type = self.player.armor.get("type", "Cloth") if self.player.armor else "Cloth"
                 is_crit  = self.resolver.roll_critical(self.enemy.agility)
                 if self.resolver.roll_evasion(self.player.agility):
+                    evaded = True
                     pending.append(f"  {self.player.name} evades!")
                 else:
                     dmg = self.resolver.calculate_damage(
@@ -290,10 +298,28 @@ class ArenaScreen:
                 36 if is_crit else 28,
             )
 
+        # Sounds
+        if self._snd:
+            snd = self._snd
+            _swing = {"Quick": "swing_quick", "Heavy": "swing_heavy"}
+            if enemy_action in _swing:
+                _sn = _swing[enemy_action]
+                self._anim.add(sound_at(lambda n=_sn: snd.play_swing(n), 0))
+            cf = _CONTACT_FRAME.get(enemy_action, 0)
+            if dmg_in > 0:
+                _imp = "impact_heavy" if enemy_action == "Heavy" else "impact_quick"
+                self._anim.add(sound_at(lambda n=_imp: snd.play_impact(n), cf))
+                if is_crit:
+                    self._anim.add(sound_at(lambda: snd.play("critical"), cf))
+            elif evaded:
+                self._anim.add(sound_at(lambda: snd.play("miss"), cf))
+
         def _on_done() -> None:
             self.log_lines.extend(pending)
             if not self.player.is_alive:
                 self._victory = False
+                if self._snd:
+                    self._snd.play("death")
                 self._anim.add(death_anim(True), screen_fade())
                 def _after_death() -> None:
                     self._anim.add(hold_black(120))
@@ -389,6 +415,55 @@ class ArenaScreen:
             self._anim.float_text(f"{limb} INJURED!", (255, 130, 0),
                                    self._player_screen_cx(), floor_top - 22, 22)
 
+        self._queue_combat_sounds(player_action, enemy_action, result)
+
+    def _queue_combat_sounds(self, player_action: str, enemy_action: str,
+                              result: "RoundResult") -> None:
+        """Add sound_at tracks tied to the exact animation contact frames."""
+        snd = self._snd
+        if snd is None:
+            return
+
+        # ── Swing sounds at frame 0 ───────────────────────────────────────────
+        _swing = {"Quick": "swing_quick", "Heavy": "swing_heavy"}
+        if player_action in _swing:
+            _n = _swing[player_action]
+            self._anim.add(sound_at(lambda n=_n: snd.play_swing(n), 0))
+        if enemy_action in _swing:
+            _n = _swing[enemy_action]
+            self._anim.add(sound_at(lambda n=_n: snd.play_swing(n), 0))
+
+        # ── Impact / miss at contact frame ────────────────────────────────────
+        _cf_p = _CONTACT_FRAME.get(player_action, 0)
+        if result.player_damage_out > 0:
+            _imp = "impact_heavy" if player_action == "Heavy" else "impact_quick"
+            self._anim.add(sound_at(lambda n=_imp: snd.play_impact(n), _cf_p))
+            if result.player_crit:
+                self._anim.add(sound_at(lambda: snd.play("critical"), _cf_p))
+        elif result.outcome in ("attacker_hits", "both_hit"):
+            self._anim.add(sound_at(lambda: snd.play("miss"), _cf_p))
+
+        _cf_e = _CONTACT_FRAME.get(enemy_action, 0)
+        if result.player_damage_in > 0:
+            _imp = "impact_heavy" if enemy_action == "Heavy" else "impact_quick"
+            self._anim.add(sound_at(lambda n=_imp: snd.play_impact(n), _cf_e))
+            if result.enemy_crit:
+                self._anim.add(sound_at(lambda: snd.play("critical"), _cf_e))
+        elif result.outcome in ("defender_hits", "both_hit"):
+            self._anim.add(sound_at(lambda: snd.play("miss"), _cf_e))
+
+        # ── Block: Defend beats Quick or Ranged ───────────────────────────────
+        if (player_action == "Defend" and result.player_damage_in == 0
+                and enemy_action in ("Quick", "Ranged")):
+            self._anim.add(sound_at(lambda: snd.play("block"), 0))
+        if (enemy_action == "Defend" and result.player_damage_out == 0
+                and player_action in ("Quick", "Ranged")):
+            self._anim.add(sound_at(lambda: snd.play("block"), 0))
+
+        # ── Limb injury ───────────────────────────────────────────────────────
+        if result.new_enemy_wounds or result.new_player_wounds:
+            self._anim.add(sound_at(lambda: snd.play("limb_injury"), 0))
+
     # ── Round handling ────────────────────────────────────────────────────────
 
     def _execute_round(self, player_action: str) -> None:
@@ -454,11 +529,17 @@ class ArenaScreen:
             if battle_end:
                 self._victory = (battle_end == "player_win")
                 dying_player  = (battle_end == "enemy_win")
-                # death + fade in parallel, then hold black 2 s, then show banner
+                if self._snd:
+                    self._snd.play("death")
                 self._anim.add(death_anim(dying_player), screen_fade())
                 def _after_death() -> None:
-                    self._anim.add(hold_black(120))   # 2 s at 60 fps
-                    self._anim.on_done(lambda: setattr(self, "state", "battle_over"))
+                    self._anim.add(hold_black(120))
+                    def _set_over() -> None:
+                        self.state = "battle_over"
+                        if self._snd and self._victory:
+                            self._snd.play("victory")
+                            self._snd.play("crowd_cheer", loops=2)
+                    self._anim.on_done(_set_over)
                 self._anim.on_done(_after_death)
             else:
                 self.state = "round_over"
@@ -477,6 +558,7 @@ class ArenaScreen:
 
         self._render_surf = pygame.Surface((_W, _H))
         self._bold_cache: dict[int, pygame.font.Font] = {}
+        self._snd = SoundSystem(_SOUNDS)
 
         self._player_sprite: pygame.Surface | None = None
         self._enemy_sprite:  pygame.Surface | None = None
