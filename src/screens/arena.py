@@ -310,6 +310,25 @@ class ArenaScreen:
                 f"{self.enemy.name}'s ranged attack weakened at close range."
             )
 
+        # ── Heavy knockback — successful Heavy pushes defender 1 tile away ──
+        # Player Heavy hits enemy → enemy pushed toward far edge
+        if player_action == "Heavy" and result.player_damage_out > 0:
+            new_et = min(_ARENA_TILES - 1, self._enemy_tile + 1)
+            if new_et != self._enemy_tile:
+                self._enemy_tile = new_et
+                result.log.append(
+                    f"{self.enemy.name} is knocked back! (dist {self._distance()})"
+                )
+
+        # Enemy Heavy hits player → player pushed toward near edge
+        if enemy_action == "Heavy" and result.player_damage_in > 0:
+            new_pt = max(0, self._player_tile - 1)
+            if new_pt != self._player_tile:
+                self._player_tile = new_pt
+                result.log.append(
+                    f"{self.player.name} is knocked back! (dist {self._distance()})"
+                )
+
         self.last_result = result
 
         # Always show what both sides did, even if one side's hit was blocked
