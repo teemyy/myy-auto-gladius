@@ -221,3 +221,10 @@ def screen_fade() -> _Track:
     def fn(f: int, st: AState) -> None:
         st.overlay_alpha = int(255.0 * f / 19.0)
     return _Track([_Seg(20, fn)])
+
+
+def hold_black(frames: int) -> _Track:
+    """Hold a fully black overlay for the given number of frames."""
+    def fn(f: int, st: AState) -> None:
+        st.overlay_alpha = 255
+    return _Track([_Seg(frames, fn)])

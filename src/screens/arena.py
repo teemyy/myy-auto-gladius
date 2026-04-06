@@ -6,7 +6,7 @@ from ._anim import (
     AnimSys, AState,
     quick_atk, heavy_atk, defend_anim,
     hit_flash, sprite_knockback, screen_shake,
-    miss_flash, death_anim, screen_fade,
+    miss_flash, death_anim, screen_fade, hold_black,
 )
 
 if TYPE_CHECKING:
@@ -226,6 +226,81 @@ class ArenaScreen:
                 f"{self.player.name} {'advances' if delta > 0 else 'retreats'}."
                 f" Distance: {self._distance()}"
             )
+        self._enemy_action_on_move()
+
+    def _enemy_action_on_move(self) -> None:
+        """Enemy takes a free action while the player repositions."""
+        enemy_action = self.enemy.choose_action(player_last_action=self._last_player_action)
+        self.resolver.consume_stamina(self.enemy, enemy_action)
+
+        dist       = self._distance()
+        dmg_in     = 0
+        is_crit    = False
+        pending    = [f"  {self.enemy.name}: {enemy_action}"]
+
+        if enemy_action in ("Heavy", "Quick", "Ranged"):
+            in_range = (dist < _RANGE_FAR) if enemy_action != "Ranged" else True
+            if in_range:
+                weapon   = self.enemy.weapon or {}
+                base_dmg = weapon.get("damage", {}).get(enemy_action, 5)
+                dmg_type = (weapon.get("damage_types", {}).get(enemy_action)
+                            or weapon.get("damage_type", "slashing"))
+                arm_type = self.player.armor.get("type", "Cloth") if self.player.armor else "Cloth"
+                is_crit  = self.resolver.roll_critical(self.enemy.agility)
+                if self.resolver.roll_evasion(self.player.agility):
+                    pending.append(f"  {self.player.name} evades!")
+                else:
+                    dmg = self.resolver.calculate_damage(
+                        base_dmg, dmg_type, arm_type,
+                        self.enemy.strength, self.player.strength, is_crit,
+                    )
+                    if enemy_action == "Ranged" and dist <= _RANGE_CLOSE:
+                        dmg = max(1, dmg // 2)
+                    dmg_in = self.player.take_damage(dmg)
+                    tag    = "CRITICAL! " if is_crit else ""
+                    pending.append(f"  {tag}{self.enemy.name} hits {self.player.name} "
+                                   f"with {enemy_action} for {dmg_in}!")
+                    # Heavy knockback during move
+                    if enemy_action == "Heavy":
+                        new_pt = max(0, self._player_tile - 1)
+                        if new_pt != self._player_tile:
+                            self._player_tile = new_pt
+                            pending.append(f"  {self.player.name} is knocked back! "
+                                           f"(dist {self._distance()})")
+            else:
+                pending.append(f"  {self.enemy.name}'s {enemy_action} misses — out of range.")
+        else:
+            pending.append(f"  {self.enemy.name} takes a defensive stance.")
+
+        # Queue animations
+        _atk = {"Quick": quick_atk, "Heavy": heavy_atk, "Defend": defend_anim}
+        if enemy_action in _atk:
+            self._anim.add(_atk[enemy_action](False))
+
+        floor_top = float(_ARENA_Y + _TILE_H - _SPRITE_H - 12)
+        if dmg_in > 0:
+            self._anim.add(hit_flash(True, is_crit))
+            self._anim.add(sprite_knockback(True, -30.0 if enemy_action == "Heavy" else -15.0))
+            if enemy_action == "Heavy":
+                self._anim.add(screen_shake(10 if is_crit else 5, 6))
+            self._anim.float_text(
+                str(dmg_in),
+                (255, 220, 50) if is_crit else (255, 160, 100),
+                self._player_screen_cx(), floor_top,
+                36 if is_crit else 28,
+            )
+
+        def _on_done() -> None:
+            self.log_lines.extend(pending)
+            if not self.player.is_alive:
+                self._victory = False
+                self._anim.add(death_anim(True), screen_fade())
+                def _after_death() -> None:
+                    self._anim.add(hold_black(120))
+                    self._anim.on_done(lambda: setattr(self, "state", "battle_over"))
+                self._anim.on_done(_after_death)
+
+        self._anim.on_done(_on_done)
 
     def _move_enemy_ai(self) -> None:
         dist       = self._distance()
@@ -378,11 +453,13 @@ class ArenaScreen:
             battle_end = self.resolver.is_battle_over(self.player, self.enemy)
             if battle_end:
                 self._victory = (battle_end == "player_win")
-                self._anim.add(
-                    death_anim(battle_end == "enemy_win"),
-                    screen_fade(),
-                )
-                self._anim.on_done(lambda: setattr(self, "state", "battle_over"))
+                dying_player  = (battle_end == "enemy_win")
+                # death + fade in parallel, then hold black 2 s, then show banner
+                self._anim.add(death_anim(dying_player), screen_fade())
+                def _after_death() -> None:
+                    self._anim.add(hold_black(120))   # 2 s at 60 fps
+                    self._anim.on_done(lambda: setattr(self, "state", "battle_over"))
+                self._anim.on_done(_after_death)
             else:
                 self.state = "round_over"
 
