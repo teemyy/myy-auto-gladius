@@ -19,7 +19,7 @@ _ASSETS  = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "images
 _SOUNDS  = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "sounds")
 
 # Frame at which the weapon makes contact for each action (used for impact sounds)
-_CONTACT_FRAME: dict[str, int] = {"Quick": 5, "Heavy": 7, "Ranged": 0}
+_CONTACT_FRAME: dict[str, int] = {"Quick": 11, "Heavy": 15, "Ranged": 0}
 
 _IDLE_SPRITES: dict[str, str] = {
     "Yumi": "yumi_idle.jpg",
@@ -303,7 +303,7 @@ class ArenaScreen:
                 self._anim.add(hit_flash(True, _is_crit))
                 self._anim.add(sprite_knockback(True, -30.0 if enemy_action == "Heavy" else -15.0))
                 if enemy_action == "Heavy":
-                    self._anim.add(screen_shake(10 if _is_crit else 5, 6))
+                    self._anim.add(screen_shake(10 if _is_crit else 5, 12))
                 self._anim.float_text(
                     str(_dmg_in),
                     (255, 220, 50) if _is_crit else (255, 160, 100),
@@ -396,7 +396,7 @@ class ArenaScreen:
                 self._anim.add(hit_flash(False, crit))
                 self._anim.add(sprite_knockback(False, +30.0 if player_action == "Heavy" else +15.0))
                 if player_action == "Heavy":
-                    self._anim.add(screen_shake(10 if crit else 5, 6))
+                    self._anim.add(screen_shake(10 if crit else 5, 12))
                 self._anim.float_text(
                     str(result.player_damage_out),
                     (255, 220, 50) if crit else _WHITE,
@@ -433,7 +433,7 @@ class ArenaScreen:
                 self._anim.add(hit_flash(True, crit))
                 self._anim.add(sprite_knockback(True, -30.0 if enemy_action == "Heavy" else -15.0))
                 if enemy_action == "Heavy":
-                    self._anim.add(screen_shake(10 if crit else 5, 6))
+                    self._anim.add(screen_shake(10 if crit else 5, 12))
                 self._anim.float_text(
                     str(result.player_damage_in),
                     (255, 220, 50) if crit else (255, 160, 100),
@@ -552,6 +552,8 @@ class ArenaScreen:
                 def _after_death() -> None:
                     self._anim.add(hold_black(120))
                     def _set_over() -> None:
+                        if self.state == "battle_over":
+                            return
                         self.state = "battle_over"
                         if self._snd and self._victory:
                             self._snd.play("victory")

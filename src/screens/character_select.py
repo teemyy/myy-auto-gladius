@@ -203,6 +203,9 @@ class CharacterSelectScreen:
         self._font_confirm  = pygame.font.SysFont(None, 52)
         self._font_confirm2 = pygame.font.SysFont(None, 36)
 
+        self._confirm_yes_rect: pygame.Rect | None = None
+        self._confirm_no_rect:  pygame.Rect | None = None
+
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def update(self, dt: float) -> None:
@@ -226,7 +229,7 @@ class CharacterSelectScreen:
 
         # Bottom hint
         hint = self._font_hint.render(
-            "← →  browse     ENTER  select     ESC  back", True, (65, 55, 40))
+            "← →  browse     click / ENTER  select     ESC  back", True, (65, 55, 40))
         self.surface.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, 688)))
 
         if self.state == "confirming":
@@ -251,20 +254,34 @@ class CharacterSelectScreen:
         hovered  = idx == self._hover_idx
 
         # Card background
-        bg = (28, 22, 18) if not selected else (38, 30, 20)
+        if selected:
+            bg = (38, 30, 20)
+        elif hovered:
+            bg = (33, 26, 19)
+        else:
+            bg = (28, 22, 18)
         pygame.draw.rect(self.surface, bg, rect, border_radius=6)
 
         # Border
-        border_color = char["card_border"] if selected else (55, 45, 35)
-        border_w     = 2 if selected else 1
+        if selected:
+            border_color = char["card_border"]
+            border_w     = 2
+        elif hovered:
+            r, g, b = char["card_border"]
+            border_color = (r // 2, g // 2, b // 2)
+            border_w     = 2
+        else:
+            border_color = (55, 45, 35)
+            border_w     = 1
         pygame.draw.rect(self.surface, border_color, rect, border_w, border_radius=6)
 
-        # Glow effect for selected card (extra outer rect)
-        if selected:
+        # Glow effect for selected or hovered card (extra outer rect)
+        if selected or hovered:
             glow = rect.inflate(4, 4)
             glow_surf = pygame.Surface(glow.size, pygame.SRCALPHA)
             r, g, b = char["card_border"]
-            pygame.draw.rect(glow_surf, (r, g, b, 50), glow_surf.get_rect(), border_radius=8)
+            alpha = 50 if selected else 25
+            pygame.draw.rect(glow_surf, (r, g, b, alpha), glow_surf.get_rect(), border_radius=8)
             self.surface.blit(glow_surf, glow.topleft)
 
         # Portrait
@@ -365,11 +382,31 @@ class CharacterSelectScreen:
         title_surf = self._font_confirm2.render(char["title"], True, char["card_border"])
         self.surface.blit(title_surf, title_surf.get_rect(center=(cx, panel.top + 142)))
 
-        # Yes / No
-        yes = self._font_confirm2.render("[Y]  Yes", True, (100, 200, 100))
-        no  = self._font_confirm2.render("[N]  No",  True, (200, 80,  80))
-        self.surface.blit(yes, yes.get_rect(center=(cx - 110, panel.bottom - 42)))
-        self.surface.blit(no,  no.get_rect( center=(cx + 110, panel.bottom - 42)))
+        # Confirm / Cancel buttons
+        mouse = pygame.mouse.get_pos()
+
+        yes_rect = pygame.Rect(cx - 230, panel.bottom - 62, 200, 44)
+        no_rect  = pygame.Rect(cx +  30, panel.bottom - 62, 200, 44)
+
+        yes_hov = yes_rect.collidepoint(mouse)
+        no_hov  = no_rect.collidepoint(mouse)
+
+        pygame.draw.rect(self.surface, (18, 36, 18), yes_rect, border_radius=6)
+        pygame.draw.rect(self.surface, (140, 220, 140) if yes_hov else (70, 160, 70),
+                         yes_rect, 2, border_radius=6)
+        yes_lbl = self._font_confirm2.render("Confirm", True,
+                                             (180, 255, 180) if yes_hov else (100, 200, 100))
+        self.surface.blit(yes_lbl, yes_lbl.get_rect(center=yes_rect.center))
+
+        pygame.draw.rect(self.surface, (36, 18, 18), no_rect, border_radius=6)
+        pygame.draw.rect(self.surface, (220, 140, 140) if no_hov else (160, 70, 70),
+                         no_rect, 2, border_radius=6)
+        no_lbl = self._font_confirm2.render("Cancel", True,
+                                            (255, 180, 180) if no_hov else (200, 80, 80))
+        self.surface.blit(no_lbl, no_lbl.get_rect(center=no_rect.center))
+
+        self._confirm_yes_rect = yes_rect
+        self._confirm_no_rect  = no_rect
 
     # ── Input handlers ────────────────────────────────────────────────────────
 
@@ -398,4 +435,10 @@ class CharacterSelectScreen:
                 self._result = CHARACTERS[self.selected_idx]
                 self._done   = True
             elif event.key in (pygame.K_n, pygame.K_ESCAPE):
+                self.state = "selecting"
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self._confirm_yes_rect and self._confirm_yes_rect.collidepoint(event.pos):
+                self._result = CHARACTERS[self.selected_idx]
+                self._done   = True
+            elif self._confirm_no_rect and self._confirm_no_rect.collidepoint(event.pos):
                 self.state = "selecting"
