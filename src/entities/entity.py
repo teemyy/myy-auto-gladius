@@ -20,32 +20,40 @@ class BaseEntity:
     @property
     def is_alive(self) -> bool:
         """Return True while HP is above zero."""
-        pass
+        return self.hp > 0
 
     @property
     def is_exhausted(self) -> bool:
         """Return True when stamina has reached zero (forces Defend action)."""
-        pass
+        return self.stamina <= 0
 
     # ── HP ───────────────────────────────────────────────────────────────────
 
     def take_damage(self, amount: int) -> int:
         """Reduce HP by amount (clamped to 0). Return actual damage taken."""
-        pass
+        actual = min(amount, self.hp)
+        self.hp -= actual
+        return actual
 
     def heal(self, amount: int) -> int:
         """Restore HP by amount (clamped to max_hp). Return HP actually restored."""
-        pass
+        space = self.max_hp - self.hp
+        actual = min(amount, space)
+        self.hp += actual
+        return actual
 
     # ── Stamina ──────────────────────────────────────────────────────────────
 
     def use_stamina(self, amount: int) -> bool:
         """Deduct stamina. Return False (and do nothing) if insufficient."""
-        pass
+        if self.stamina < amount:
+            return False
+        self.stamina -= amount
+        return True
 
     def restore_stamina(self, amount: int) -> None:
         """Add stamina up to max_stamina."""
-        pass
+        self.stamina = min(self.stamina + amount, self.max_stamina)
 
     def recover_between_rounds(self) -> None:
         """Partially restore stamina at the end of each combat round."""
@@ -55,7 +63,13 @@ class BaseEntity:
 
     def to_dict(self) -> dict:
         """Serialise core state to a JSON-compatible dict."""
-        pass
+        return {
+            "name":        self.name,
+            "hp":          self.hp,
+            "max_hp":      self.max_hp,
+            "stamina":     self.stamina,
+            "max_stamina": self.max_stamina,
+        }
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} {self.name!r} HP={self.hp}/{self.max_hp}>"

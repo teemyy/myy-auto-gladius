@@ -33,10 +33,19 @@ MAX_INTEGRITY    = 100
 
 # Stamina change per action: negative = consumed, positive = regenerated
 STAMINA_DELTA = {
-    "Heavy":  -20,
-    "Quick":  -10,
-    "Defend": +25,   # Defend restores stamina
-    "Ranged":  -8,
+    "Heavy":  -3,
+    "Quick":  -1,
+    "Defend": +2,    # Defend restores stamina
+    "Ranged": -2,
+}
+
+# Base damage by weapon grade (used as fallback when weapon dict lacks per-action damage)
+GRADE_BASE_DAMAGE = {
+    "Iron":       5,
+    "Steel":     10,
+    "Mithril":   18,
+    "Adamantite":28,
+    "Draconic":  45,
 }
 
 # Equipment grades in ascending order

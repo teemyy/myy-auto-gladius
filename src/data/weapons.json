@@ -351,6 +351,21 @@
       "price": 1820,
       "sell_price": 910,
       "description": "Carved from a dragon's wing-bone. Arrows ignite on release."
+    },
+    {
+      "id": "iron_bow_dagger",
+      "name": "Bow & Dagger",
+      "grade": "Iron",
+      "grade_level": 1,
+      "damage_type": "piercing",
+      "damage_types": { "Ranged": "ranged", "Quick": "piercing" },
+      "damage": { "Ranged": 10, "Quick": 7 },
+      "stamina_cost": { "Ranged": 8, "Quick": 10 },
+      "crit_multiplier": 1.75,
+      "available_actions": ["Ranged", "Quick"],
+      "price": 110,
+      "sell_price": 55,
+      "description": "A shortbow and an iron dagger. Shoot from range, stab when cornered."
     }
   ]
 }

@@ -1,7 +1,10 @@
 from __future__ import annotations
 import math
+import os
 import pygame
 from ..settings import SCREEN_WIDTH, SCREEN_HEIGHT, DARK_BG, GOLD_TEXT, WHITE, GRAY, DARK_GRAY
+
+_ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "images")
 
 # ── Character definitions ─────────────────────────────────────────────────────
 
@@ -25,6 +28,7 @@ CHARACTERS: list[dict] = [
         "accent_color":     ( 90, 145, 215),
         "hair_style":       "long",
         "card_border":      ( 80, 130, 220),
+        "portrait_image":   "yumi_portrait.jpg",
     },
     {
         "id":               "hana",
@@ -45,6 +49,7 @@ CHARACTERS: list[dict] = [
         "accent_color":     (200,  88,  58),
         "hair_style":       "short",
         "card_border":      (200,  75,  55),
+        "portrait_image":   "hana_portrait.jpg",
     },
     {
         "id":               "rei",
@@ -56,7 +61,7 @@ CHARACTERS: list[dict] = [
         "strength":          10,   # medium STR
         "agility":           20,   # highest AGI — master of evasion and crits
         "endurance":         12,   # medium END
-        "starting_weapon":  "iron_bow",
+        "starting_weapon":  "iron_bow_dagger",
         # Visuals
         "portrait_bg":      ( 32,  18,  65),
         "hair_color":       ( 20,  12,  45),
@@ -65,6 +70,7 @@ CHARACTERS: list[dict] = [
         "accent_color":     (140,  75, 215),
         "hair_style":       "twintail",
         "card_border":      (145,  80, 215),
+        "portrait_image":   "rei_portrait.jpg",
     },
 ]
 
@@ -175,6 +181,20 @@ class CharacterSelectScreen:
             for i in range(3)
         ]
 
+        # Pre-load portrait images for characters that have them
+        self._portrait_imgs: dict[str, pygame.Surface | None] = {}
+        for char in CHARACTERS:
+            fname = char.get("portrait_image")
+            if fname:
+                path = os.path.join(_ASSETS_DIR, fname)
+                try:
+                    img = pygame.image.load(path).convert()
+                    self._portrait_imgs[char["id"]] = img
+                except (pygame.error, FileNotFoundError):
+                    self._portrait_imgs[char["id"]] = None
+            else:
+                self._portrait_imgs[char["id"]] = None
+
         self._font_title    = pygame.font.SysFont(None, 42)
         self._font_name     = pygame.font.SysFont(None, 48)
         self._font_subtitle = pygame.font.SysFont(None, 28)
@@ -249,7 +269,12 @@ class CharacterSelectScreen:
 
         # Portrait
         portrait_rect = pygame.Rect(rect.x, rect.y, rect.w, PORTRAIT_H)
-        _draw_portrait(self.surface, portrait_rect, char)
+        img = self._portrait_imgs.get(char["id"])
+        if img is not None:
+            scaled = pygame.transform.smoothscale(img, (portrait_rect.w, portrait_rect.h))
+            self.surface.blit(scaled, portrait_rect.topleft)
+        else:
+            _draw_portrait(self.surface, portrait_rect, char)
 
         # Clip portrait to card bounds
         pygame.draw.rect(self.surface, border_color, portrait_rect, 1)

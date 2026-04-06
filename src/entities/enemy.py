@@ -1,4 +1,8 @@
 from __future__ import annotations
+import json
+import os
+import random
+from collections import Counter
 from .entity import BaseEntity
 from typing import TYPE_CHECKING
 
@@ -11,6 +15,15 @@ class AIDifficulty:
     EASY   = "easy"    # random action
     NORMAL = "normal"  # simple counter-weighting
     HARD   = "hard"    # reads player tendencies; used by bosses
+
+
+# RPS counter table: given what the player just did, what beats it?
+_COUNTER: dict[str, str] = {
+    "Heavy":  "Quick",
+    "Quick":  "Defend",
+    "Defend": "Heavy",
+    "Ranged": "Defend",
+}
 
 
 class Enemy(BaseEntity):
@@ -61,15 +74,50 @@ class Enemy(BaseEntity):
         - NORMAL: weighted random that slightly favours countering last action
         - HARD:   frequency analysis of player_action_history to pick best counter
         """
-        pass
+        actions = self.available_actions()
+        if not actions:
+            return "Defend"
+
+        if self.ai_difficulty == AIDifficulty.EASY:
+            return random.choice(actions)
+
+        elif self.ai_difficulty == AIDifficulty.NORMAL:
+            counter = _COUNTER.get(player_last_action or "", None)
+            if counter and counter in actions and random.random() < 0.50:
+                return counter
+            return random.choice(actions)
+
+        else:  # HARD
+            if self._player_action_history:
+                most_common = Counter(self._player_action_history).most_common(1)[0][0]
+                best_counter = _COUNTER.get(most_common)
+                if best_counter and best_counter in actions:
+                    return best_counter
+            return random.choice(actions)
 
     def available_actions(self) -> list[str]:
         """Return legal actions given current stamina and limb state."""
-        pass
+        actions = list(self.weapon.get("available_actions", ["Heavy", "Quick"]))
+        if "Defend" not in actions:
+            actions.append("Defend")
+
+        if self.limbs:
+            penalties = self.limbs.get_combat_penalties()
+            if penalties.get("no_quick"):
+                actions = [a for a in actions if a != "Quick"]
+            if penalties.get("no_defend"):
+                actions = [a for a in actions if a != "Defend"]
+            if penalties.get("disarmed"):
+                actions = [a for a in actions if a == "Defend"]
+
+        if self.stamina <= 0:
+            return ["Defend"]
+
+        return actions if actions else ["Defend"]
 
     def record_player_action(self, action: str) -> None:
         """Append the player's action to history (used by HARD AI)."""
-        pass
+        self._player_action_history.append(action)
 
     # ── Reward ───────────────────────────────────────────────────────────────
 
@@ -78,11 +126,34 @@ class Enemy(BaseEntity):
 
         Return format: {"gold": int, "item": dict | None}
         """
-        pass
+        return {"gold": self.gold_reward, "item": None}
 
     # ── Serialisation ────────────────────────────────────────────────────────
 
     @classmethod
     def from_dict(cls, data: dict) -> "Enemy":
         """Construct an Enemy from an enemies.json entry."""
-        pass
+        base_dir = os.path.join(os.path.dirname(__file__), "..", "data")
+
+        with open(os.path.join(base_dir, "weapons.json"), encoding="utf-8") as f:
+            weapons_data = json.load(f)
+        with open(os.path.join(base_dir, "armors.json"), encoding="utf-8") as f:
+            armors_data = json.load(f)
+
+        weapon = next(w for w in weapons_data["weapons"] if w["id"] == data["weapon_id"])
+        armor  = next(a for a in armors_data["armors"]  if a["id"] == data["armor_id"])
+
+        return cls(
+            name          = data["name"],
+            stage         = data["stage"],
+            hp            = data["hp"],
+            stamina       = data["stamina"],
+            strength      = data["strength"],
+            agility       = data["agility"],
+            weapon        = weapon,
+            armor         = armor,
+            ai_difficulty = data["ai_difficulty"],
+            is_boss       = data["is_boss"],
+            gold_reward   = data["gold_reward"],
+            description   = data["description"],
+        )
