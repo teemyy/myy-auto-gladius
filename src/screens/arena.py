@@ -232,6 +232,8 @@ class ArenaScreen:
                 f"{self.player.name} {'advances' if delta > 0 else 'retreats'}."
                 f" Distance: {self._distance()}"
             )
+            if self._snd:
+                self._snd.play("movement")
         self._enemy_action_on_move()
 
     def _enemy_action_on_move(self) -> None:
@@ -268,7 +270,6 @@ class ArenaScreen:
                     tag    = "CRITICAL! " if is_crit else ""
                     pending.append(f"  {tag}{self.enemy.name} hits {self.player.name} "
                                    f"with {enemy_action} for {dmg_in}!")
-                    # Heavy knockback during move
                     if enemy_action == "Heavy":
                         new_pt = max(0, self._player_tile - 1)
                         if new_pt != self._player_tile:
@@ -280,39 +281,44 @@ class ArenaScreen:
         else:
             pending.append(f"  {self.enemy.name} takes a defensive stance.")
 
-        # Queue animations
-        _atk = {"Quick": quick_atk, "Heavy": heavy_atk, "Defend": defend_anim}
-        if enemy_action in _atk:
-            self._anim.add(_atk[enemy_action](False))
-
+        # Capture state for closures
+        _dmg_in  = dmg_in
+        _is_crit = is_crit
+        _evaded  = evaded
+        _snd     = self._snd
         floor_top = float(_ARENA_Y + _TILE_H - _SPRITE_H - 12)
-        if dmg_in > 0:
-            self._anim.add(hit_flash(True, is_crit))
-            self._anim.add(sprite_knockback(True, -30.0 if enemy_action == "Heavy" else -15.0))
-            if enemy_action == "Heavy":
-                self._anim.add(screen_shake(10 if is_crit else 5, 6))
-            self._anim.float_text(
-                str(dmg_in),
-                (255, 220, 50) if is_crit else (255, 160, 100),
-                self._player_screen_cx(), floor_top,
-                36 if is_crit else 28,
-            )
+        _atk  = {"Quick": quick_atk, "Heavy": heavy_atk, "Defend": defend_anim}
+        _sw   = {"Quick": "swing_quick", "Heavy": "swing_heavy"}
+        _cf_e = _CONTACT_FRAME.get(enemy_action, 0)
 
-        # Sounds
-        if self._snd:
-            snd = self._snd
-            _swing = {"Quick": "swing_quick", "Heavy": "swing_heavy"}
-            if enemy_action in _swing:
-                _sn = _swing[enemy_action]
-                self._anim.add(sound_at(lambda n=_sn: snd.play_swing(n), 0))
-            cf = _CONTACT_FRAME.get(enemy_action, 0)
-            if dmg_in > 0:
-                _imp = "impact_heavy" if enemy_action == "Heavy" else "impact_quick"
-                self._anim.add(sound_at(lambda n=_imp: snd.play_impact(n), cf))
-                if is_crit:
-                    self._anim.add(sound_at(lambda: snd.play("critical"), cf))
-            elif evaded:
-                self._anim.add(sound_at(lambda: snd.play("miss"), cf))
+        def _phase_enemy_atk() -> None:
+            if enemy_action in _atk:
+                self._anim.add(_atk[enemy_action](False))
+            if _snd and enemy_action in _sw:
+                _n = _sw[enemy_action]
+                self._anim.add(sound_at(lambda n=_n: _snd.play_swing(n), 0))
+
+        def _phase_player_impact() -> None:
+            if _dmg_in > 0:
+                self._anim.add(hit_flash(True, _is_crit))
+                self._anim.add(sprite_knockback(True, -30.0 if enemy_action == "Heavy" else -15.0))
+                if enemy_action == "Heavy":
+                    self._anim.add(screen_shake(10 if _is_crit else 5, 6))
+                self._anim.float_text(
+                    str(_dmg_in),
+                    (255, 220, 50) if _is_crit else (255, 160, 100),
+                    self._player_screen_cx(), floor_top,
+                    36 if _is_crit else 28,
+                )
+                if _snd:
+                    _imp = "impact_girl" if enemy_action == "Heavy" else "impact_quick"
+                    self._anim.add(sound_at(lambda n=_imp: _snd.play_impact(n), _cf_e))
+                    if _is_crit:
+                        self._anim.add(sound_at(lambda: _snd.play("critical"), _cf_e))
+            elif _evaded and _snd:
+                self._anim.add(miss_flash(True))
+                self._anim.float_text("MISS", _WHITE, self._player_screen_cx(), floor_top)
+                self._anim.add(sound_at(lambda: _snd.play("miss"), _cf_e))
 
         def _on_done() -> None:
             self.log_lines.extend(pending)
@@ -326,7 +332,7 @@ class ArenaScreen:
                     self._anim.on_done(lambda: setattr(self, "state", "battle_over"))
                 self._anim.on_done(_after_death)
 
-        self._anim.on_done(_on_done)
+        self._run_phases([_phase_enemy_atk, _phase_player_impact], on_complete=_on_done)
 
     def _move_enemy_ai(self) -> None:
         dist       = self._distance()
@@ -358,111 +364,125 @@ class ArenaScreen:
 
     # ── Animation queuing ─────────────────────────────────────────────────────
 
-    def _queue_combat_anims(self, player_action: str, enemy_action: str,
-                             result: "RoundResult") -> None:
-        floor_top = float(_ARENA_Y + _TILE_H - _SPRITE_H - 12)
-
-        # Attack animations
-        _atk = {
-            "Quick":  quick_atk,
-            "Heavy":  heavy_atk,
-            "Defend": defend_anim,
-        }
-        if player_action in _atk: self._anim.add(_atk[player_action](True))
-        if enemy_action  in _atk: self._anim.add(_atk[enemy_action](False))
-
-        # Enemy receives damage
-        if result.player_damage_out > 0:
-            crit = result.player_crit
-            self._anim.add(hit_flash(False, crit))
-            self._anim.add(sprite_knockback(False, +30.0 if player_action == "Heavy" else +15.0))
-            if player_action == "Heavy":
-                self._anim.add(screen_shake(10 if crit else 5, 6))
-            self._anim.float_text(
-                str(result.player_damage_out),
-                (255, 220, 50) if crit else _WHITE,
-                self._enemy_screen_cx(), floor_top,
-                36 if crit else 28,
-            )
-        elif result.outcome in ("attacker_hits", "both_hit"):
-            self._anim.add(miss_flash(False))
-            self._anim.float_text("MISS", _WHITE, self._enemy_screen_cx(), floor_top)
-
-        # Player receives damage
-        if result.player_damage_in > 0:
-            crit = result.enemy_crit
-            self._anim.add(hit_flash(True, crit))
-            self._anim.add(sprite_knockback(True, -30.0 if enemy_action == "Heavy" else -15.0))
-            if enemy_action == "Heavy":
-                self._anim.add(screen_shake(10 if crit else 5, 6))
-            self._anim.float_text(
-                str(result.player_damage_in),
-                (255, 220, 50) if crit else (255, 160, 100),
-                self._player_screen_cx(), floor_top,
-                36 if crit else 28,
-            )
-        elif result.outcome in ("defender_hits", "both_hit"):
-            self._anim.add(miss_flash(True))
-            self._anim.float_text("MISS", _WHITE, self._player_screen_cx(), floor_top)
-
-        # Limb injury floats
-        for limb in result.new_enemy_wounds:
-            self._enemy_limb_flash[limb] = 20
-            self._anim.float_text(f"{limb} INJURED!", (255, 130, 0),
-                                   self._enemy_screen_cx(), floor_top - 22, 22)
-        for limb in result.new_player_wounds:
-            self._player_limb_flash[limb] = 20
-            self._anim.float_text(f"{limb} INJURED!", (255, 130, 0),
-                                   self._player_screen_cx(), floor_top - 22, 22)
-
-        self._queue_combat_sounds(player_action, enemy_action, result)
-
-    def _queue_combat_sounds(self, player_action: str, enemy_action: str,
-                              result: "RoundResult") -> None:
-        """Add sound_at tracks tied to the exact animation contact frames."""
-        snd = self._snd
-        if snd is None:
+    def _run_phases(self, phases: list, on_complete=None) -> None:
+        """Run animation phases sequentially: each phase adds tracks, next starts when done."""
+        if not phases:
+            if on_complete:
+                on_complete()
             return
+        phases[0]()
+        tail = phases[1:]
+        self._anim.on_done(lambda t=tail, cb=on_complete: self._run_phases(t, cb))
 
-        # ── Swing sounds at frame 0 ───────────────────────────────────────────
-        _swing = {"Quick": "swing_quick", "Heavy": "swing_heavy"}
-        if player_action in _swing:
-            _n = _swing[player_action]
-            self._anim.add(sound_at(lambda n=_n: snd.play_swing(n), 0))
-        if enemy_action in _swing:
-            _n = _swing[enemy_action]
-            self._anim.add(sound_at(lambda n=_n: snd.play_swing(n), 0))
-
-        # ── Impact / miss at contact frame ────────────────────────────────────
+    def _queue_combat_anims(self, player_action: str, enemy_action: str,
+                             result: "RoundResult", on_complete=None) -> None:
+        floor_top = float(_ARENA_Y + _TILE_H - _SPRITE_H - 12)
+        snd  = self._snd
+        _atk = {"Quick": quick_atk, "Heavy": heavy_atk, "Defend": defend_anim}
+        _sw  = {"Quick": "swing_quick", "Heavy": "swing_heavy"}
         _cf_p = _CONTACT_FRAME.get(player_action, 0)
-        if result.player_damage_out > 0:
-            _imp = "impact_heavy" if player_action == "Heavy" else "impact_quick"
-            self._anim.add(sound_at(lambda n=_imp: snd.play_impact(n), _cf_p))
-            if result.player_crit:
-                self._anim.add(sound_at(lambda: snd.play("critical"), _cf_p))
-        elif result.outcome in ("attacker_hits", "both_hit"):
-            self._anim.add(sound_at(lambda: snd.play("miss"), _cf_p))
-
         _cf_e = _CONTACT_FRAME.get(enemy_action, 0)
-        if result.player_damage_in > 0:
-            _imp = "impact_heavy" if enemy_action == "Heavy" else "impact_quick"
-            self._anim.add(sound_at(lambda n=_imp: snd.play_impact(n), _cf_e))
-            if result.enemy_crit:
-                self._anim.add(sound_at(lambda: snd.play("critical"), _cf_e))
-        elif result.outcome in ("defender_hits", "both_hit"):
-            self._anim.add(sound_at(lambda: snd.play("miss"), _cf_e))
 
-        # ── Block: Defend beats Quick or Ranged ───────────────────────────────
-        if (player_action == "Defend" and result.player_damage_in == 0
-                and enemy_action in ("Quick", "Ranged")):
-            self._anim.add(sound_at(lambda: snd.play("block"), 0))
-        if (enemy_action == "Defend" and result.player_damage_out == 0
-                and player_action in ("Quick", "Ranged")):
-            self._anim.add(sound_at(lambda: snd.play("block"), 0))
+        def _phase_player_atk() -> None:
+            if player_action in _atk:
+                self._anim.add(_atk[player_action](True))
+            if snd and player_action in _sw:
+                _n = _sw[player_action]
+                self._anim.add(sound_at(lambda n=_n: snd.play_swing(n), 0))
 
-        # ── Limb injury ───────────────────────────────────────────────────────
-        if result.new_enemy_wounds or result.new_player_wounds:
-            self._anim.add(sound_at(lambda: snd.play("limb_injury"), 0))
+        def _phase_enemy_impact() -> None:
+            if result.player_damage_out > 0:
+                crit = result.player_crit
+                self._anim.add(hit_flash(False, crit))
+                self._anim.add(sprite_knockback(False, +30.0 if player_action == "Heavy" else +15.0))
+                if player_action == "Heavy":
+                    self._anim.add(screen_shake(10 if crit else 5, 6))
+                self._anim.float_text(
+                    str(result.player_damage_out),
+                    (255, 220, 50) if crit else _WHITE,
+                    self._enemy_screen_cx(), floor_top,
+                    36 if crit else 28,
+                )
+                if snd:
+                    _imp = "impact_man" if player_action == "Heavy" else "impact_quick"
+                    self._anim.add(sound_at(lambda n=_imp: snd.play_impact(n), _cf_p))
+                    if crit:
+                        self._anim.add(sound_at(lambda: snd.play("critical"), _cf_p))
+            else:
+                self._anim.add(miss_flash(False))
+                self._anim.float_text("MISS", _WHITE, self._enemy_screen_cx(), floor_top)
+                if snd:
+                    self._anim.add(sound_at(lambda: snd.play("miss"), _cf_p))
+            for limb in result.new_enemy_wounds:
+                self._enemy_limb_flash[limb] = 20
+                self._anim.float_text(f"{limb} INJURED!", (255, 130, 0),
+                                       self._enemy_screen_cx(), floor_top - 22, 22)
+            if snd and result.new_enemy_wounds:
+                self._anim.add(sound_at(lambda: snd.play("limb_injury"), 0))
+
+        def _phase_enemy_atk() -> None:
+            if enemy_action in _atk:
+                self._anim.add(_atk[enemy_action](False))
+            if snd and enemy_action in _sw:
+                _n = _sw[enemy_action]
+                self._anim.add(sound_at(lambda n=_n: snd.play_swing(n), 0))
+
+        def _phase_player_impact() -> None:
+            if result.player_damage_in > 0:
+                crit = result.enemy_crit
+                self._anim.add(hit_flash(True, crit))
+                self._anim.add(sprite_knockback(True, -30.0 if enemy_action == "Heavy" else -15.0))
+                if enemy_action == "Heavy":
+                    self._anim.add(screen_shake(10 if crit else 5, 6))
+                self._anim.float_text(
+                    str(result.player_damage_in),
+                    (255, 220, 50) if crit else (255, 160, 100),
+                    self._player_screen_cx(), floor_top,
+                    36 if crit else 28,
+                )
+                if snd:
+                    _imp = "impact_girl" if enemy_action == "Heavy" else "impact_quick"
+                    self._anim.add(sound_at(lambda n=_imp: snd.play_impact(n), _cf_e))
+                    if crit:
+                        self._anim.add(sound_at(lambda: snd.play("critical"), _cf_e))
+            else:
+                self._anim.add(miss_flash(True))
+                self._anim.float_text("MISS", _WHITE, self._player_screen_cx(), floor_top)
+                if snd:
+                    self._anim.add(sound_at(lambda: snd.play("miss"), _cf_e))
+            for limb in result.new_player_wounds:
+                self._player_limb_flash[limb] = 20
+                self._anim.float_text(f"{limb} INJURED!", (255, 130, 0),
+                                       self._player_screen_cx(), floor_top - 22, 22)
+            if snd and result.new_player_wounds:
+                self._anim.add(sound_at(lambda: snd.play("limb_injury"), 0))
+
+        def _phase_neither() -> None:
+            if player_action in _atk:
+                self._anim.add(_atk[player_action](True))
+            if enemy_action in _atk:
+                self._anim.add(_atk[enemy_action](False))
+            if snd and player_action == "Defend" and enemy_action == "Defend":
+                self._anim.add(sound_at(lambda: snd.play("block"), 0))
+            elif snd:
+                # One side blocked — play block for whichever is defending
+                if player_action == "Defend":
+                    self._anim.add(sound_at(lambda: snd.play("block"), 0))
+                elif enemy_action == "Defend":
+                    self._anim.add(sound_at(lambda: snd.play("block"), 0))
+
+        outcome = result.outcome
+        if outcome == "attacker_hits":
+            phases = [_phase_player_atk, _phase_enemy_impact, _phase_enemy_atk]
+        elif outcome == "defender_hits":
+            phases = [_phase_enemy_atk, _phase_player_impact, _phase_player_atk]
+        elif outcome == "both_hit":
+            phases = [_phase_player_atk, _phase_enemy_impact,
+                      _phase_enemy_atk, _phase_player_impact]
+        else:  # "neither"
+            phases = [_phase_neither]
+
+        self._run_phases(phases, on_complete)
 
     # ── Round handling ────────────────────────────────────────────────────────
 
@@ -520,9 +540,6 @@ class ArenaScreen:
         ]
         pending_log.extend(result.log)
 
-        # Queue animations (parallel tracks)
-        self._queue_combat_anims(player_action, enemy_action, result)
-
         def _on_done() -> None:
             self.log_lines.extend(pending_log)
             battle_end = self.resolver.is_battle_over(self.player, self.enemy)
@@ -544,7 +561,7 @@ class ArenaScreen:
             else:
                 self.state = "round_over"
 
-        self._anim.on_done(_on_done)
+        self._queue_combat_anims(player_action, enemy_action, result, on_complete=_on_done)
 
     # ── Asset init ────────────────────────────────────────────────────────────
 
