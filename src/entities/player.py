@@ -36,8 +36,9 @@ class Player(BaseEntity):
         self.agility:   int   = agility    # crit chance % + evasion chance %
         self.endurance: int   = endurance  # governs max stamina pool
 
-        self.weapon:   dict | None = None   # loaded weapon data dict
-        self.armor:    dict | None = None   # loaded armor data dict
+        self.weapon:        dict | None = None   # melee weapon slot
+        self.ranged_weapon: dict | None = None   # ranged weapon slot
+        self.armor:         dict | None = None   # armor slot
         self.limbs:    "LimbSystem | None" = None   # injected after construction
 
         self.stage:    int  = 1
@@ -45,16 +46,30 @@ class Player(BaseEntity):
 
     # ── Equipment ────────────────────────────────────────────────────────────
 
-    def equip_weapon(self, weapon: dict) -> dict | None:
-        """Equip a weapon dict; return the previously equipped weapon or None."""
-        old = self.weapon
-        self.weapon = weapon
+    def equip_weapon(self, weapon: dict | None) -> dict | None:
+        """Equip a weapon dict into the correct slot (melee or ranged).
+
+        Weapons that include 'Ranged' in available_actions go into the ranged slot;
+        all others go into the melee slot.  Returns the previously equipped item in
+        that slot, or None.  Pass None to clear the melee slot.
+        """
+        if weapon is None:
+            old, self.weapon = self.weapon, None
+            return old
+        if "Ranged" in weapon.get("available_actions", []):
+            old, self.ranged_weapon = self.ranged_weapon, weapon
+        else:
+            old, self.weapon = self.weapon, weapon
         return old
 
     def unequip_weapon(self) -> dict | None:
-        """Remove and return the equipped weapon."""
-        old = self.weapon
-        self.weapon = None
+        """Remove and return the equipped melee weapon."""
+        old, self.weapon = self.weapon, None
+        return old
+
+    def unequip_ranged_weapon(self) -> dict | None:
+        """Remove and return the equipped ranged weapon."""
+        old, self.ranged_weapon = self.ranged_weapon, None
         return old
 
     def equip_armor(self, armor: dict) -> dict | None:
@@ -70,10 +85,8 @@ class Player(BaseEntity):
         return old
 
     def has_ranged_weapon(self) -> bool:
-        """Return True if the equipped weapon supports the Ranged action."""
-        if not self.weapon:
-            return False
-        return "Ranged" in self.weapon.get("available_actions", [])
+        """Return True if the ranged weapon slot is filled."""
+        return self.ranged_weapon is not None
 
     # ── Actions ──────────────────────────────────────────────────────────────
 
@@ -86,16 +99,11 @@ class Player(BaseEntity):
         - All offensive actions if R-Arm is destroyed (forced Defend)
         - All actions except Defend if stamina is zero
         """
-        if self.weapon:
-            actions = list(self.weapon.get("available_actions", ["Heavy", "Quick"]))
-        else:
-            actions = ["Heavy", "Quick"]
-
-        if "Defend" not in actions:
-            actions.append("Defend")
-
-        if not self.has_ranged_weapon():
-            actions = [a for a in actions if a != "Ranged"]
+        # Every character always has Heavy, Quick, Defend.
+        # Ranged is only added when the equipped weapon supports it.
+        actions = ["Heavy", "Quick", "Defend"]
+        if self.has_ranged_weapon():
+            actions.append("Ranged")
 
         if self.limbs:
             penalties = self.limbs.get_combat_penalties()
@@ -164,8 +172,9 @@ class Player(BaseEntity):
             "endurance":  self.endurance,
             "stage":      self.stage,
             "victories":  self.victories,
-            "weapon":     self.weapon,
-            "armor":      self.armor,
+            "weapon":        self.weapon,
+            "ranged_weapon": self.ranged_weapon,
+            "armor":         self.armor,
             "limbs":      self.limbs.to_dict() if self.limbs else None,
         })
         return base
@@ -187,8 +196,9 @@ class Player(BaseEntity):
         p.stamina   = data["stamina"]
         p.stage     = data.get("stage", 1)
         p.victories = data.get("victories", 0)
-        p.weapon    = data.get("weapon")
-        p.armor     = data.get("armor")
+        p.weapon        = data.get("weapon")
+        p.ranged_weapon = data.get("ranged_weapon")
+        p.armor         = data.get("armor")
         if data.get("limbs"):
             p.limbs = LimbSystem.from_dict(data["limbs"])
         return p

@@ -3,6 +3,22 @@ import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+# Unarmed fallback when R-Arm is severed
+FIST_WEAPON: dict = {
+    "id":                "fist",
+    "name":              "Fist",
+    "grade":             "None",
+    "grade_level":       0,
+    "damage_type":       "crushing",
+    "damage":            {"Heavy": 4, "Quick": 2},
+    "stamina_cost":      {"Heavy": 8, "Quick": 4},
+    "crit_multiplier":   1.0,
+    "available_actions": ["Heavy", "Quick"],
+}
+
+# Chance per crit to trigger a limb injury/sever roll
+_LIMB_CRIT_CHANCE = 0.15
+
 if TYPE_CHECKING:
     from ..entities.player import Player
     from ..entities.enemy  import Enemy
@@ -26,10 +42,10 @@ RPS_TABLE: dict[tuple[str, str], str] = {
     ("Defend", "Heavy"):   "defender_hits",   # Heavy beats Defend  → enemy wins
     ("Defend", "Quick"):   "attacker_hits",   # Defend beats Quick  → player wins
     ("Defend", "Defend"):  "neither",
-    ("Defend", "Ranged"):  "attacker_hits",   # Defend beats Ranged → player wins
+    ("Defend", "Ranged"):  "neither",          # Defend blocks Ranged — no counter
     ("Ranged", "Heavy"):   "both_hit",
     ("Ranged", "Quick"):   "both_hit",
-    ("Ranged", "Defend"):  "defender_hits",   # Defend beats Ranged → enemy wins
+    ("Ranged", "Defend"):  "neither",          # Defend blocks Ranged — no counter
     ("Ranged", "Ranged"):  "both_hit",
 }
 
@@ -87,9 +103,11 @@ class RoundResult:
     enemy_crit:         bool = False
     player_limb_hit:    str | None = None
     enemy_limb_hit:     str | None = None
-    new_player_wounds:  list[str] = field(default_factory=list)
-    new_enemy_wounds:   list[str] = field(default_factory=list)
-    log:                list[str] = field(default_factory=list)
+    new_player_wounds:    list[str] = field(default_factory=list)  # severed (integrity 0)
+    new_enemy_wounds:     list[str] = field(default_factory=list)
+    new_player_injuries:  list[str] = field(default_factory=list)  # partial (integrity 50)
+    new_enemy_injuries:   list[str] = field(default_factory=list)
+    log:                  list[str] = field(default_factory=list)
 
 
 class CombatResolver:
@@ -203,23 +221,30 @@ class CombatResolver:
 
     def _apply_attack(self, attacker, defender, action: str, result: RoundResult, is_player_attack: bool) -> None:
         """Resolve one directional attack, updating result in place."""
-        weapon = attacker.weapon
+        # Select weapon based on action type
+        if action == "Ranged":
+            # Use the ranged slot; fall back to general weapon if no separate slot
+            weapon   = getattr(attacker, "ranged_weapon", None) or attacker.weapon
+            disarmed = False
+        else:
+            # Melee: R-Arm severed → fight with fist
+            disarmed = attacker.limbs and attacker.limbs.has_wound("disarmed")
+            weapon   = FIST_WEAPON if disarmed else (attacker.weapon or None)
+
         if weapon:
             avail_dmg = weapon.get("damage", {})
             base_dmg  = avail_dmg.get(action)
             if base_dmg is None:
-                # Counter-attack (e.g. Defend parried Quick): use weakest available hit
-                base_dmg    = min(avail_dmg.values()) if avail_dmg else 5
-                action_label = "counter"
+                base_dmg     = min(avail_dmg.values()) if avail_dmg else 3
+                action_label = "counter" if not disarmed else "fist"
             else:
-                action_label = action
-            # Per-action damage type (e.g. bow_dagger uses "ranged" for Ranged, "piercing" for Quick)
+                action_label = "fist" if disarmed else action
             dmg_type = (weapon.get("damage_types") or {}).get(action) \
                        or weapon.get("damage_type", "slashing")
         else:
-            base_dmg     = 5
-            dmg_type     = "slashing"
-            action_label = action
+            base_dmg     = 3
+            dmg_type     = "crushing"
+            action_label = "fist"
 
         armor_type = defender.armor.get("type", "Cloth") if defender.armor else "Cloth"
 
@@ -239,14 +264,8 @@ class CombatResolver:
         # Crit check
         is_crit = self.roll_critical(atk_agi)
 
-        # Disarmed penalty: R-Arm destroyed → -50 % damage
-        disarmed = attacker.limbs and attacker.limbs.has_wound("disarmed")
-
-        dmg = self.calculate_damage(base_dmg, dmg_type, armor_type,
-                                    attacker.strength, defender.strength, is_crit)
-        if disarmed:
-            dmg = max(1, dmg // 2)
-
+        dmg    = self.calculate_damage(base_dmg, dmg_type, armor_type,
+                                       attacker.strength, defender.strength, is_crit)
         actual = defender.take_damage(dmg)
 
         if is_player_attack:
@@ -257,29 +276,37 @@ class CombatResolver:
             result.enemy_crit        = is_crit
 
         crit_tag = "CRITICAL! " if is_crit else ""
-        if action_label == "counter":
-            result.log.append(
-                f"{crit_tag}{attacker.name} parries and counter-attacks {defender.name} for {actual}."
-            )
-        else:
-            result.log.append(
-                f"{crit_tag}{attacker.name} hits {defender.name} with {action_label} for {actual}."
-            )
+        result.log.append(
+            f"{crit_tag}{attacker.name} hits {defender.name} with {action_label} for {actual}."
+        )
 
-        # Limb injury on crit
-        if is_crit and defender.limbs:
+        # Limb system: 15 % chance per crit to injure or sever a limb
+        if is_crit and defender.limbs and random.random() < _LIMB_CRIT_CHANCE:
             limb = random.choice(list(defender.limbs.LIMBS))
-            newly_wounded = defender.limbs.apply_damage(limb, max(1, actual // 2))
-            if is_player_attack:
-                result.enemy_limb_hit = limb
-                if newly_wounded:
-                    result.new_enemy_wounds.append(limb)
-                    result.log.append(f"  {defender.name}'s {limb} is destroyed!")
-            else:
-                result.player_limb_hit = limb
-                if newly_wounded:
-                    result.new_player_wounds.append(limb)
-                    result.log.append(f"  {defender.name}'s {limb} is destroyed!")
+            cur  = defender.limbs.get_integrity(limb)
+
+            if cur > 50:
+                # First strike: injure (bring to 50, no wound effect yet)
+                defender.limbs.apply_damage(limb, cur - 50)
+                result.log.append(f"  {defender.name}'s {limb} is injured!")
+                if is_player_attack:
+                    result.enemy_limb_hit = limb
+                    result.new_enemy_injuries.append(limb)
+                else:
+                    result.player_limb_hit = limb
+                    result.new_player_injuries.append(limb)
+            elif cur > 0:
+                # Already injured: sever (bring to 0, wound effect triggers)
+                newly_severed = defender.limbs.apply_damage(limb, cur)
+                result.log.append(f"  {defender.name}'s {limb} is SEVERED!")
+                if is_player_attack:
+                    result.enemy_limb_hit = limb
+                    if newly_severed:
+                        result.new_enemy_wounds.append(limb)
+                else:
+                    result.player_limb_hit = limb
+                    if newly_severed:
+                        result.new_player_wounds.append(limb)
 
     def _apply_stamina(self, entity, action: str) -> None:
         delta = _STAMINA_DELTA.get(action, 0)

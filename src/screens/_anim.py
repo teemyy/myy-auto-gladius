@@ -22,7 +22,8 @@ class AState:
     enemy_angle:   float        = 0.0
     player_alpha:  int          = 255   # overall sprite opacity
     enemy_alpha:   int          = 255
-    overlay_alpha: int          = 0     # full-screen black fade
+    overlay_alpha: int          = 0     # full-screen overlay opacity
+    overlay_color: tuple        = (0, 0, 0)  # overlay color (black fade or white flash)
 
 
 @dataclass
@@ -227,6 +228,22 @@ def hold_black(frames: int) -> _Track:
     """Hold a fully black overlay for the given number of frames."""
     def fn(f: int, st: AState) -> None:
         st.overlay_alpha = 255
+    return _Track([_Seg(frames, fn)])
+
+
+def boss_entry(frames: int = 30) -> _Track:
+    """Slide enemy sprite in from off-screen right over given frames."""
+    def fn(f: int, st: AState) -> None:
+        t = f / max(1, frames - 1)
+        st.enemy_atk_x = 500.0 * (1.0 - t)
+    return _Track([_Seg(frames, fn)])
+
+
+def screen_flash_white(frames: int = 10) -> _Track:
+    """White overlay that fades out over given frames."""
+    def fn(f: int, st: AState) -> None:
+        st.overlay_color = (255, 255, 255)
+        st.overlay_alpha = int(255 * (1.0 - f / max(1, frames - 1)))
     return _Track([_Seg(frames, fn)])
 
 

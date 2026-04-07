@@ -170,7 +170,7 @@ class CharacterSelectScreen:
 
     def __init__(self, surface: pygame.Surface):
         self.surface      = surface
-        self.selected_idx = 0
+        self.selected_idx = -1   # -1 = nothing keyboard-selected yet
         self._hover_idx   = -1
         self.state        = "selecting"
         self._done        = False
@@ -232,7 +232,7 @@ class CharacterSelectScreen:
             "← →  browse     click / ENTER  select     ESC  back", True, (65, 55, 40))
         self.surface.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, 688)))
 
-        if self.state == "confirming":
+        if self.state == "confirming" and self.selected_idx >= 0:
             self._draw_confirmation(CHARACTERS[self.selected_idx])
 
     def handle_event(self, event: pygame.event.Event) -> None:
@@ -417,17 +417,17 @@ class CharacterSelectScreen:
             elif event.key == pygame.K_RIGHT:
                 self.selected_idx = (self.selected_idx + 1) % 3
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                self.state = "confirming"
+                if self.selected_idx >= 0:
+                    self.state = "confirming"
             elif event.key == pygame.K_ESCAPE:
                 self._result = None
                 self._done   = True
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for i, rect in enumerate(self._card_rects):
                 if rect.collidepoint(event.pos):
-                    if i == self.selected_idx:
-                        self.state = "confirming"
-                    else:
-                        self.selected_idx = i
+                    self.selected_idx = i
+                    self.state = "confirming"  # one click = confirm dialog, no soft-select
+                    return
 
     def _handle_confirming(self, event: pygame.event.Event) -> None:
         if event.type == pygame.KEYDOWN:

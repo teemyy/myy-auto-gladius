@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 import os
 import pygame
 from typing import TYPE_CHECKING
@@ -7,8 +8,12 @@ from ._anim import (
     quick_atk, heavy_atk, defend_anim,
     hit_flash, sprite_knockback, screen_shake,
     miss_flash, death_anim, screen_fade, hold_black, sound_at,
+    boss_entry, screen_flash_white,
 )
 from ..systems.sound import SoundSystem
+from ..systems.spritesheet import SpriteSheet
+from ..systems.animation import AnimationController, IDLE, WALK, ATTACK, DEATH, HURT
+from ..systems.enemy_appearance import EnemyAppearance
 
 if TYPE_CHECKING:
     from ..entities.player import Player
@@ -17,18 +22,21 @@ if TYPE_CHECKING:
 
 _ASSETS  = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "images")
 _SOUNDS  = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "sounds")
+_PACK    = os.path.join(_ASSETS, "GandalfHardcore Character Asset Pack")
 
 # Frame at which the weapon makes contact for each action (used for impact sounds)
 _CONTACT_FRAME: dict[str, int] = {"Quick": 11, "Heavy": 15, "Ranged": 0}
 
-_IDLE_SPRITES: dict[str, str] = {
-    "Yumi": "yumi_idle.jpg",
-    "Hana": "hana_idle.jpg",
-    "Rei":  "rei_idle.jpg",
-}
-_ENEMY_SPRITES: dict[str, str] = {
-    "slave_gladiator": "slave_gladiator_idle.jpg",
-}
+# Player sprite layers (relative to _PACK) — all 800×448, 80×64 per frame, black colorkey
+# Hair drawn FIRST (base); skin drawn on top so face pixels overwrite hair at face-center.
+# Hair still shows at crown (y<22) and at sides where skin has no pixels.
+_PLAYER_LAYERS: list[str] = [
+    "Female Hair/Female Hair1.png",              # hair (base — drawn first)
+    "Character skin colors/Female Skin2.png",    # skin/face on top (face visible)
+    "Female Clothing/Blue Panties and Bra.png",  # clothing
+    "Female Hand/Female Sword.png",              # weapon
+]
+# Enemy layers are generated per-stage by EnemyAppearance (not a constant)
 
 # ── Layout ────────────────────────────────────────────────────────────────────
 _W, _H       = 1280, 720
@@ -47,8 +55,7 @@ _TILE_W      = 80
 _TILE_H      = _ARENA_H
 _ARENA_TILES = 8
 _ARENA_X     = (_W - _TILE_W * _ARENA_TILES) // 2
-_SPRITE_H    = 150
-_SPRITE_W    = 150
+_SPRITE_H    = 128   # scaled sprite height (64 × 2)
 
 _PLAYER_START_TILE = 2
 _ENEMY_START_TILE  = 5
@@ -67,6 +74,7 @@ _YELLOW      = (210, 180, 40)
 _BLUE        = (60, 130, 210)
 _DARK_BORDER = (55, 42, 22)
 _LIMB_DEAD   = (100, 15, 15)
+_HOVER       = (255, 230, 120)
 
 # Button layout
 _BTN_W, _BTN_H   = 155, 68
@@ -75,10 +83,7 @@ _MOVE_BTN_W      = 120
 _MOVE_BTN_H      = 68
 _MOVE_BTN_MARGIN = 18
 _ACTIONS_ORDER   = ["Heavy", "Quick", "Defend", "Ranged"]
-
-
-def _enemy_id_from_name(name: str) -> str:
-    return name.lower().replace(" ", "_")
+_BLEED_DMG       = 20   # HP lost per turn when any limb is severed
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -123,11 +128,23 @@ class ArenaScreen:
         self._enemy_limb_flash:  dict[str, int] = {}
         self._snd: SoundSystem | None = None  # created in _init_assets
 
+        # Sprite animation controllers (created in _init_assets)
+        self._player_anim: AnimationController | None = None
+        self._enemy_anim:  AnimationController | None = None
+        self._is_boss:     bool = EnemyAppearance().is_boss(player.stage)
+
         # Clickable rects (populated each draw)
         self._action_btn_rects: dict[str, pygame.Rect] = {}
         self._retreat_btn_rect: pygame.Rect | None     = None
         self._advance_btn_rect: pygame.Rect | None     = None
         self._continue_rect:    pygame.Rect | None     = None
+
+        # Sound controls UI state
+        self._sound_open:    bool           = False
+        self._slider_drag:   bool           = False
+        self._speaker_rect:  pygame.Rect | None = None
+        self._mute_rect:     pygame.Rect | None = None
+        self._slider_track:  pygame.Rect | None = None
 
         self._assets_ready = False
 
@@ -135,6 +152,10 @@ class ArenaScreen:
 
     def update(self, dt: float) -> None:
         self._anim.tick()
+        if self._player_anim:
+            self._player_anim.update(dt)
+        if self._enemy_anim:
+            self._enemy_anim.update(dt)
         for d in (self._player_limb_flash, self._enemy_limb_flash):
             for k in list(d):
                 d[k] -= 1
@@ -162,14 +183,47 @@ class ArenaScreen:
         self.surface.fill(_DARK_BG)
         self.surface.blit(rs, (st.screen_dx, st.screen_dy))
 
-        # Full-screen fade-to-black overlay
+        # Full-screen overlay (black fade or white flash)
         if st.overlay_alpha > 0:
             ov = pygame.Surface((_W, _H))
-            ov.fill((0, 0, 0))
+            ov.fill(st.overlay_color)
             ov.set_alpha(st.overlay_alpha)
             self.surface.blit(ov, (0, 0))
 
+        # Sound controls (drawn on top, not affected by screen shake)
+        if self._assets_ready:
+            self._draw_sound_controls(self.surface)
+
     def handle_event(self, event: pygame.event.Event) -> None:
+        # Sound controls — processed first, not blocked by animation lock
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            pos = event.pos
+            if self._speaker_rect and self._speaker_rect.collidepoint(pos):
+                self._sound_open = not self._sound_open
+                return
+            if self._sound_open and self._snd:
+                if self._mute_rect and self._mute_rect.collidepoint(pos):
+                    self._snd.mute_music(not self._snd.music_muted)
+                    return
+                if self._slider_track and self._slider_track.collidepoint(pos):
+                    rel = (pos[0] - self._slider_track.left) / max(1, self._slider_track.width)
+                    self._snd.set_music_volume(max(0.0, min(1.0, rel)))
+                    self._slider_drag = True
+                    return
+            # Clicking outside submenu closes it (without passing click to game)
+            if self._sound_open:
+                sub_rect = pygame.Rect(_W - 196, _TOP_BAR_H, 190, 95)
+                if not sub_rect.collidepoint(pos):
+                    self._sound_open = False
+                    return
+
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self._slider_drag = False
+
+        if event.type == pygame.MOUSEMOTION and self._slider_drag and self._slider_track and self._snd:
+            rel = (event.pos[0] - self._slider_track.left) / max(1, self._slider_track.width)
+            self._snd.set_music_volume(max(0.0, min(1.0, rel)))
+
         if self._anim.busy():
             return  # lock input during animation
 
@@ -187,6 +241,7 @@ class ArenaScreen:
                 if self._continue_rect and self._continue_rect.collidepoint(pos):
                     self._advance_from_round_over()
             elif self.state == "battle_over":
+                if self._snd: self._snd.stop_music()
                 self._done = True
 
         if event.type != pygame.KEYDOWN:
@@ -203,6 +258,7 @@ class ArenaScreen:
                 self._advance_from_round_over()
         elif self.state == "battle_over":
             if event.key in (pygame.K_SPACE, pygame.K_RETURN):
+                if self._snd: self._snd.stop_music()
                 self._done = True
 
     def is_done(self)    -> bool: return self._done
@@ -222,7 +278,22 @@ class ArenaScreen:
     def _distance(self) -> int:
         return self._enemy_tile - self._player_tile
 
+    def _can_move(self) -> bool:
+        """Return False if either player leg is severed (integrity 0)."""
+        if not self.player.limbs:
+            return True
+        return (self.player.limbs.get_integrity("L-Leg") > 0 and
+                self.player.limbs.get_integrity("R-Leg") > 0)
+
+    def _has_broken_limb(self, entity) -> bool:
+        if not entity.limbs:
+            return False
+        return any(entity.limbs.get_integrity(l) == 0
+                   for l in entity.limbs.LIMBS)
+
     def _move_player(self, delta: int) -> None:
+        if not self._can_move():
+            return
         new = max(0, min(self._player_tile + delta, _ARENA_TILES - 1))
         if delta > 0 and new >= self._enemy_tile:
             new = self._enemy_tile - 1
@@ -234,6 +305,8 @@ class ArenaScreen:
             )
             if self._snd:
                 self._snd.play("movement")
+            if self._player_anim:
+                self._player_anim.trigger(WALK)
         self._enemy_action_on_move()
 
     def _enemy_action_on_move(self) -> None:
@@ -321,9 +394,13 @@ class ArenaScreen:
                 self._anim.add(sound_at(lambda: _snd.play("miss"), _cf_e))
 
         def _on_done() -> None:
+            if self._player_anim:
+                self._player_anim.trigger(IDLE)
             self.log_lines.extend(pending)
             if not self.player.is_alive:
                 self._victory = False
+                if self._player_anim:
+                    self._player_anim.trigger(DEATH)
                 if self._snd:
                     self._snd.play("death")
                 self._anim.add(death_anim(True), screen_fade())
@@ -386,6 +463,8 @@ class ArenaScreen:
         def _phase_player_atk() -> None:
             if player_action in _atk:
                 self._anim.add(_atk[player_action](True))
+            if self._player_anim and player_action in ("Quick", "Heavy"):
+                self._player_anim.trigger(ATTACK)
             if snd and player_action in _sw:
                 _n = _sw[player_action]
                 self._anim.add(sound_at(lambda n=_n: snd.play_swing(n), 0))
@@ -393,6 +472,8 @@ class ArenaScreen:
         def _phase_enemy_impact() -> None:
             if result.player_damage_out > 0:
                 crit = result.player_crit
+                if self._enemy_anim:
+                    self._enemy_anim.trigger(HURT)
                 self._anim.add(hit_flash(False, crit))
                 self._anim.add(sprite_knockback(False, +30.0 if player_action == "Heavy" else +15.0))
                 if player_action == "Heavy":
@@ -413,16 +494,22 @@ class ArenaScreen:
                 self._anim.float_text("MISS", _WHITE, self._enemy_screen_cx(), floor_top)
                 if snd:
                     self._anim.add(sound_at(lambda: snd.play("miss"), _cf_p))
-            for limb in result.new_enemy_wounds:
+            for limb in result.new_enemy_injuries:
                 self._enemy_limb_flash[limb] = 20
                 self._anim.float_text(f"{limb} INJURED!", (255, 130, 0),
                                        self._enemy_screen_cx(), floor_top - 22, 22)
-            if snd and result.new_enemy_wounds:
+            for limb in result.new_enemy_wounds:
+                self._enemy_limb_flash[limb] = 20
+                self._anim.float_text(f"{limb} SEVERED!", (255, 40, 40),
+                                       self._enemy_screen_cx(), floor_top - 22, 22)
+            if snd and (result.new_enemy_wounds or result.new_enemy_injuries):
                 self._anim.add(sound_at(lambda: snd.play("limb_injury"), 0))
 
         def _phase_enemy_atk() -> None:
             if enemy_action in _atk:
                 self._anim.add(_atk[enemy_action](False))
+            if self._enemy_anim and enemy_action in ("Quick", "Heavy"):
+                self._enemy_anim.trigger(ATTACK)
             if snd and enemy_action in _sw:
                 _n = _sw[enemy_action]
                 self._anim.add(sound_at(lambda n=_n: snd.play_swing(n), 0))
@@ -430,6 +517,8 @@ class ArenaScreen:
         def _phase_player_impact() -> None:
             if result.player_damage_in > 0:
                 crit = result.enemy_crit
+                if self._player_anim:
+                    self._player_anim.trigger(HURT)
                 self._anim.add(hit_flash(True, crit))
                 self._anim.add(sprite_knockback(True, -30.0 if enemy_action == "Heavy" else -15.0))
                 if enemy_action == "Heavy":
@@ -450,11 +539,15 @@ class ArenaScreen:
                 self._anim.float_text("MISS", _WHITE, self._player_screen_cx(), floor_top)
                 if snd:
                     self._anim.add(sound_at(lambda: snd.play("miss"), _cf_e))
-            for limb in result.new_player_wounds:
+            for limb in result.new_player_injuries:
                 self._player_limb_flash[limb] = 20
                 self._anim.float_text(f"{limb} INJURED!", (255, 130, 0),
                                        self._player_screen_cx(), floor_top - 22, 22)
-            if snd and result.new_player_wounds:
+            for limb in result.new_player_wounds:
+                self._player_limb_flash[limb] = 20
+                self._anim.float_text(f"{limb} SEVERED!", (255, 40, 40),
+                                       self._player_screen_cx(), floor_top - 22, 22)
+            if snd and (result.new_player_wounds or result.new_player_injuries):
                 self._anim.add(sound_at(lambda: snd.play("limb_injury"), 0))
 
         def _phase_neither() -> None:
@@ -492,6 +585,15 @@ class ArenaScreen:
         enemy_action = self.enemy.choose_action(player_last_action=self._last_player_action)
         self.enemy.record_player_action(player_action)
         self._last_player_action = player_action
+
+        # ── Bleeding (any severed limb = 20 dmg/turn) ─────────────────────
+        bleed_log: list[str] = []
+        if self._has_broken_limb(self.player):
+            bleed = self.player.take_damage(_BLEED_DMG)
+            bleed_log.append(f"  {self.player.name} bleeds for {bleed} damage!")
+        if self._has_broken_limb(self.enemy):
+            bleed = self.enemy.take_damage(_BLEED_DMG)
+            bleed_log.append(f"  {self.enemy.name} bleeds for {bleed} damage!")
 
         dist   = self._distance()
         result = self.resolver.resolve_round(self.player, self.enemy, player_action, enemy_action)
@@ -535,9 +637,10 @@ class ArenaScreen:
         self.last_result = result
 
         # Collect log — shown after animations complete
-        pending_log = [
+        pending_log = bleed_log[:]
+        pending_log.append(
             f"-- {self.player.name}: {player_action}  vs  {self.enemy.name}: {enemy_action} --"
-        ]
+        )
         pending_log.extend(result.log)
 
         def _on_done() -> None:
@@ -546,6 +649,10 @@ class ArenaScreen:
             if battle_end:
                 self._victory = (battle_end == "player_win")
                 dying_player  = (battle_end == "enemy_win")
+                if dying_player and self._player_anim:
+                    self._player_anim.trigger(DEATH)
+                elif not dying_player and self._enemy_anim:
+                    self._enemy_anim.trigger(DEATH)
                 if self._snd:
                     self._snd.play("death")
                 self._anim.add(death_anim(dying_player), screen_fade())
@@ -579,28 +686,32 @@ class ArenaScreen:
         self._bold_cache: dict[int, pygame.font.Font] = {}
         self._snd = SoundSystem(_SOUNDS)
 
-        self._player_sprite: pygame.Surface | None = None
-        self._enemy_sprite:  pygame.Surface | None = None
-        self._enemy_sprite_flipped: pygame.Surface | None = None
+        # Sprite animation controllers — load each layer; skip silently if missing
+        def _load_layers(paths: list[str]) -> list[SpriteSheet]:
+            sheets = []
+            for rel in paths:
+                s = SpriteSheet(os.path.join(_PACK, rel))
+                if s.loaded:
+                    sheets.append(s)
+            return sheets
 
-        for attr, fname in (
-            ("_player_sprite", _IDLE_SPRITES.get(self.player.name)),
-            ("_enemy_sprite",  _ENEMY_SPRITES.get(
-                getattr(self.enemy, "id", None) or _enemy_id_from_name(self.enemy.name)
-            )),
-        ):
-            if fname:
-                path = os.path.join(_ASSETS, fname)
-                try:
-                    raw    = pygame.image.load(path).convert()
-                    corner = raw.get_at((0, 0))[:3]
-                    raw.set_colorkey(corner, pygame.RLEACCEL)
-                    setattr(self, attr, pygame.transform.smoothscale(raw, (_SPRITE_W, _SPRITE_H)))
-                except (pygame.error, FileNotFoundError):
-                    pass
+        p_layers = _load_layers(_PLAYER_LAYERS)
+        if p_layers:
+            self._player_anim = AnimationController(
+                p_layers[0], flip=True, layers=p_layers[1:])
 
-        if self._enemy_sprite:
-            self._enemy_sprite_flipped = pygame.transform.flip(self._enemy_sprite, True, False)
+        # Enemy appearance — randomised per stage, boss-scaled
+        _ea         = EnemyAppearance()
+        e_rel_paths = _ea.generate_layers(self.player.stage)
+        e_layers    = _load_layers(e_rel_paths)
+        bscale      = _ea.get_boss_scale(self.player.stage)
+        if e_layers:
+            self._enemy_anim = AnimationController(
+                e_layers[0], flip=False, layers=e_layers[1:], boss_scale=bscale)
+
+        # Boss entry animation
+        if self._is_boss:
+            self._anim.add(boss_entry(30), screen_flash_white(10))
 
         self._bg_image: pygame.Surface | None = None
         try:
@@ -608,6 +719,10 @@ class ArenaScreen:
             self._bg_image = pygame.transform.smoothscale(raw, (_W, _ARENA_H))
         except (pygame.error, FileNotFoundError):
             pass
+
+        # Start background music
+        if self._snd:
+            self._snd.play_music(os.path.join(_SOUNDS, "arenamusic.mp3"))
 
         self._assets_ready = True
 
@@ -625,14 +740,24 @@ class ArenaScreen:
         stage_txt = self._f_sub.render(f"Stage {self.player.stage}", True, _GOLD)
         surface.blit(stage_txt, (20, 12))
 
-        grade     = self.enemy.weapon.get("grade", "?")
-        enemy_txt = self._f_sub.render(f"{self.enemy.name}  [{grade} weapon]", True, (200, 80, 80))
-        surface.blit(enemy_txt, enemy_txt.get_rect(centerx=_W // 2, centery=_TOP_BAR_H // 2))
+        grade = self.enemy.weapon.get("grade", "?")
+        if self._is_boss:
+            name_surf = self._bold_font(38).render(
+                f"⚔  {self.enemy.name}  ⚔", True, (240, 55, 55))
+        else:
+            name_surf = self._f_sub.render(
+                f"{self.enemy.name}  [{grade} weapon]", True, (200, 80, 80))
+        surface.blit(name_surf, name_surf.get_rect(centerx=_W // 2, centery=_TOP_BAR_H // 2))
 
         hp_pct   = self.enemy.hp / self.enemy.max_hp
-        hp_color = _RED if hp_pct < 0.3 else _YELLOW if hp_pct < 0.6 else _GREEN
-        hp_txt   = self._f_sub.render(f"HP {self.enemy.hp}/{self.enemy.max_hp}", True, hp_color)
-        surface.blit(hp_txt, hp_txt.get_rect(right=_W - 20, centery=_TOP_BAR_H // 2))
+        hp_color = _RED if hp_pct < 0.3 else _YELLOW if hp_pct < 0.6 else (_RED if self._is_boss else _GREEN)
+        bar_w    = 260 if self._is_boss else 180
+        bar_x    = _W - bar_w - 16
+        bar_y    = (_TOP_BAR_H - 14) // 2
+        pygame.draw.rect(surface, (40, 15, 15), (bar_x, bar_y, bar_w, 14), border_radius=3)
+        pygame.draw.rect(surface, hp_color,     (bar_x, bar_y, int(bar_w * hp_pct), 14), border_radius=3)
+        hp_txt = self._f_small.render(f"HP {self.enemy.hp}/{self.enemy.max_hp}", True, _WHITE)
+        surface.blit(hp_txt, hp_txt.get_rect(centerx=bar_x + bar_w // 2, centery=bar_y + 7))
 
     def _draw_arena_floor(self, surface: pygame.Surface) -> None:
         if self._bg_image:
@@ -670,6 +795,17 @@ class ArenaScreen:
             surface.blit(t, (sx, sy))
         return sy
 
+    def _draw_crown(self, surface: pygame.Surface, cx: int, tip_y: int) -> None:
+        """Draw a small golden star crown above the boss sprite."""
+        r_out, r_in = 10, 5
+        pts = []
+        for i in range(10):
+            angle = math.pi / 2 - i * 2 * math.pi / 10  # start at top
+            r     = r_out if i % 2 == 0 else r_in
+            pts.append((cx + r * math.cos(angle), tip_y + r * math.sin(angle)))
+        pygame.draw.polygon(surface, (255, 210, 40), pts)
+        pygame.draw.polygon(surface, (200, 155, 20), pts, 1)
+
     def _draw_combatants(self, surface: pygame.Surface) -> None:
         st      = self._anim.state
         floor_y = _ARENA_Y + _TILE_H - 8
@@ -678,10 +814,12 @@ class ArenaScreen:
         px_base   = _ARENA_X + self._player_tile * _TILE_W + _TILE_W // 2
         px_center = px_base + int(st.player_atk_x + st.player_kb_x)
 
-        if self._player_sprite:
-            spr_top = self._apply_sprite(surface, self._player_sprite,
-                                         px_center, floor_y,
-                                         st.player_angle, st.player_alpha, st.player_tint)
+        if self._player_anim:
+            spr        = self._player_anim.get_current_surface()
+            p_tint     = (255, 255, 255, 180) if self._player_anim.state == HURT else st.player_tint
+            spr_top    = self._apply_sprite(surface, spr,
+                                            px_center, floor_y,
+                                            st.player_angle, st.player_alpha, p_tint)
         else:
             rx = px_center - 28
             ry = floor_y - 100
@@ -695,29 +833,34 @@ class ArenaScreen:
         ex_base   = _ARENA_X + self._enemy_tile * _TILE_W + _TILE_W // 2
         ex_center = ex_base + int(st.enemy_atk_x + st.enemy_kb_x)
 
-        if self._enemy_sprite_flipped:
-            spr = self._enemy_sprite_flipped
-            if st.enemy_angle:
-                spr = pygame.transform.rotate(spr, -st.enemy_angle)
-            esx     = ex_center - spr.get_width() // 2
-            esy     = floor_y   - spr.get_height()
-            if st.enemy_alpha != 255:
-                spr = spr.copy()
-                spr.set_alpha(st.enemy_alpha)
-            surface.blit(spr, (esx, esy))
-            if st.enemy_tint:
-                r, g, b, a = st.enemy_tint
-                t = pygame.Surface(spr.get_size(), pygame.SRCALPHA)
-                t.fill((r, g, b, a))
-                surface.blit(t, (esx, esy))
-            ename_top = esy
+        if self._enemy_anim:
+            espr      = self._enemy_anim.get_current_surface()
+            e_tint    = (255, 255, 255, 180) if self._enemy_anim.state == HURT else st.enemy_tint
+            angle     = -st.enemy_angle if st.enemy_angle else 0
+
+            # Boss: red danger aura behind sprite
+            if self._is_boss:
+                aw, ah = espr.get_width(), espr.get_height()
+                ax, ay = ex_center - aw // 2 - 6, floor_y - ah - 6
+                pulse  = int(40 + 20 * abs(((self._anim.state.screen_dx or 0) * 13) % 60 - 30) / 30)
+                pygame.draw.rect(surface, (140, 20 + pulse, 20 + pulse),
+                                 (ax, ay, aw + 12, ah + 12), 3, border_radius=6)
+
+            ename_top = self._apply_sprite(surface, espr,
+                                           ex_center, floor_y,
+                                           angle, st.enemy_alpha, e_tint)
+
+            # Boss: star crown above head
+            if self._is_boss:
+                self._draw_crown(surface, ex_center, ename_top - 6)
         else:
             erx = ex_center - 28
             ery = floor_y - 100
             pygame.draw.rect(surface, (200, 50, 40), (erx, ery, 56, 100), border_radius=4)
             ename_top = ery
 
-        ename = self._f_small.render(self.enemy.name[:10], True, _WHITE)
+        name_col = (220, 60, 60) if self._is_boss else _WHITE
+        ename = self._f_small.render(self.enemy.name[:10], True, name_col)
         surface.blit(ename, ename.get_rect(centerx=ex_base, bottom=ename_top - 2))
 
         if self.last_result:
@@ -755,11 +898,16 @@ class ArenaScreen:
         self._draw_bar(surface, x0, y0 + 34, 280, 16, self.player.hp, self.player.max_hp, _RED, "HP")
         self._draw_bar(surface, x0, y0 + 58, 280, 16,
                        self.player.stamina, self.player.max_stamina, _BLUE, "STA")
+        p_melee  = self.player.weapon
+        p_ranged = self.player.ranged_weapon
+        wpn_txt  = (p_melee.get("name", "?") if p_melee else "—") + (
+                   f"  /  {p_ranged.get('name','?')}" if p_ranged else "")
+        surface.blit(self._f_body.render(f"Wpn: {wpn_txt[:28]}", True, _GRAY), (x0, y0 + 84))
         surface.blit(self._f_body.render(f"STR {self.player.strength}", True, (200, 95, 50)),
-                     (x0, y0 + 84))
+                     (x0, y0 + 106))
         surface.blit(self._f_body.render(f"AGI {self.player.agility}", True, (200, 175, 55)),
-                     (x0 + 100, y0 + 84))
-        self._draw_limb_grid(surface, x0, y0 + 110, self.player, self._player_limb_flash)
+                     (x0 + 100, y0 + 106))
+        self._draw_limb_grid(surface, x0, y0 + 130, self.player, self._player_limb_flash)
 
         # Enemy panel
         e_rect = pygame.Rect(_W // 2 + 10, _STATUS_Y, _W // 2 - 10, _STATUS_H)
@@ -801,12 +949,12 @@ class ArenaScreen:
             integrity = entity.limbs.get_integrity(limb) if entity.limbs else 100
             if flash and limb in flash:
                 color = _RED
-            elif integrity >= 60:
+            elif integrity > 50:
                 color = _GREEN
             elif integrity > 0:
-                color = _YELLOW
+                color = _YELLOW   # injured
             else:
-                color = _LIMB_DEAD
+                color = _LIMB_DEAD  # severed
             bx = x + i * (box_w + gap)
             pygame.draw.rect(surface, color, (bx, y, box_w, box_h), border_radius=2)
             lbl = self._f_small.render(f"{limb[:5]} {integrity}", True, _DARK_BG)
@@ -839,23 +987,35 @@ class ArenaScreen:
         ret_rect = pygame.Rect(_MOVE_BTN_MARGIN, cy - _MOVE_BTN_H // 2, _MOVE_BTN_W, _MOVE_BTN_H)
         adv_rect = pygame.Rect(_W - _MOVE_BTN_MARGIN - _MOVE_BTN_W, cy - _MOVE_BTN_H // 2,
                                _MOVE_BTN_W, _MOVE_BTN_H)
+        mouse_pos  = pygame.mouse.get_pos()
+        can_move   = self._can_move()
         for rect, label, arrow in ((ret_rect, "Retreat", "◀"), (adv_rect, "Advance", "▶")):
-            pygame.draw.rect(surface, (30, 22, 14), rect, border_radius=6)
-            pygame.draw.rect(surface, (80, 65, 40), rect, 2, border_radius=6)
-            surface.blit(self._f_small.render(arrow, True, _GOLD),
-                         self._f_small.render(arrow, True, _GOLD).get_rect(
+            hov = rect.collidepoint(mouse_pos) and can_move
+            if can_move:
+                bg_c  = (45, 34, 20) if hov else (35, 26, 15)
+                bd_c  = _HOVER if hov else (160, 125, 60)
+                arr_c = _HOVER if hov else _GOLD
+                lbl_c = _HOVER if hov else _WHITE
+            else:
+                bg_c, bd_c, arr_c, lbl_c = (20, 16, 12), (55, 45, 35), (70, 60, 45), (60, 55, 45)
+            pygame.draw.rect(surface, bg_c, rect, border_radius=6)
+            pygame.draw.rect(surface, bd_c, rect, 2, border_radius=6)
+            surface.blit(self._f_sub.render(arrow, True, arr_c),
+                         self._f_sub.render(arrow, True, arr_c).get_rect(
                              center=(rect.centerx, rect.centery - 10)))
-            surface.blit(self._f_small.render(label, True, _GRAY),
-                         self._f_small.render(label, True, _GRAY).get_rect(
-                             center=(rect.centerx, rect.centery + 10)))
+            surface.blit(self._f_small.render(label, True, lbl_c),
+                         self._f_small.render(label, True, lbl_c).get_rect(
+                             center=(rect.centerx, rect.centery + 12)))
+        if not can_move:
+            imm = self._f_small.render("IMMOBILIZED", True, (180, 60, 60))
+            mid = (ret_rect.right + adv_rect.left) // 2
+            surface.blit(imm, imm.get_rect(centerx=mid, bottom=ret_rect.top - 2))
         self._retreat_btn_rect = ret_rect
         self._advance_btn_rect = adv_rect
 
-        # Action buttons
-        available    = self.player.available_actions()
-        weapon_acts  = (self.player.weapon.get("available_actions", ["Heavy", "Quick"])
-                        if self.player.weapon else ["Heavy", "Quick"])
-        actions      = [a for a in _ACTIONS_ORDER if a in weapon_acts or a == "Defend"]
+        # Action buttons — show exactly what the player can do this round
+        available = self.player.available_actions()
+        actions   = [a for a in _ACTIONS_ORDER if a in available]
         zone_x1      = ret_rect.right + 10
         zone_x2      = adv_rect.left  - 10
         total_w      = len(actions) * _BTN_W + (len(actions) - 1) * _BTN_GAP
@@ -903,6 +1063,79 @@ class ArenaScreen:
             else:                              color = (160, 145, 110)
             surface.blit(self._f_hint.render(line, True, color),
                          (8, _LOG_Y + 4 + i * 18))
+
+    def _draw_sound_controls(self, surface: pygame.Surface) -> None:
+        """Draw speaker icon + optional submenu in the top-right corner."""
+        # ── Speaker button ────────────────────────────────────────────────
+        btn = pygame.Rect(_W - 46, 5, 40, 40)
+        self._speaker_rect = btn
+        mouse = pygame.mouse.get_pos()
+        hov   = btn.collidepoint(mouse)
+        muted = self._snd.music_muted if self._snd else False
+
+        pygame.draw.rect(surface, (45, 35, 20) if hov else (25, 18, 10), btn, border_radius=6)
+        pygame.draw.rect(surface, _GOLD if hov else (90, 72, 40), btn, 1, border_radius=6)
+
+        # Speaker icon geometry (relative to btn center)
+        cx, cy = btn.centerx, btn.centery
+        col = (210, 175, 80) if hov else (160, 130, 55)
+        # Body rectangle
+        pygame.draw.rect(surface, col, (cx - 9, cy - 4, 5, 8))
+        # Cone polygon
+        pygame.draw.polygon(surface, col, [
+            (cx - 4, cy - 5), (cx + 3, cy - 9), (cx + 3, cy + 9), (cx - 4, cy + 5)
+        ])
+        if muted:
+            pygame.draw.line(surface, (220, 60, 60), (cx + 4, cy - 6), (cx + 10, cy + 6), 2)
+            pygame.draw.line(surface, (220, 60, 60), (cx + 10, cy - 6), (cx + 4, cy + 6), 2)
+        else:
+            # Two sound-wave arcs
+            for r in (5, 9):
+                pygame.draw.arc(surface, col,
+                                (cx + 3, cy - r, r, r * 2), -0.65, 0.65, 2)
+
+        if not self._sound_open:
+            return
+
+        # ── Submenu panel ─────────────────────────────────────────────────
+        panel = pygame.Rect(_W - 196, _TOP_BAR_H, 190, 95)
+        pygame.draw.rect(surface, (28, 20, 12), panel, border_radius=6)
+        pygame.draw.rect(surface, (80, 65, 40), panel, 1, border_radius=6)
+
+        px, py = panel.x + 10, panel.y + 10
+        vol    = self._snd.music_volume if self._snd else 0.7
+
+        # Volume label
+        surface.blit(self._f_small.render("Music Volume", True, _GRAY), (px, py))
+
+        # Slider track
+        track = pygame.Rect(px, py + 18, 150, 6)
+        self._slider_track = track
+        pygame.draw.rect(surface, (55, 42, 26), track, border_radius=3)
+        fill_w = int(track.width * vol)
+        if fill_w > 0:
+            pygame.draw.rect(surface, _GOLD,
+                             (track.x, track.y, fill_w, track.height), border_radius=3)
+        pygame.draw.rect(surface, (100, 80, 45), track, 1, border_radius=3)
+
+        # Slider handle
+        hx = track.x + fill_w
+        pygame.draw.circle(surface, _GOLD, (hx, track.centery), 6)
+        pygame.draw.circle(surface, (200, 155, 30), (hx, track.centery), 6, 1)
+
+        # Volume percentage
+        pct_txt = self._f_small.render(f"{int(vol * 100)}%", True, _WHITE)
+        surface.blit(pct_txt, (track.right + 6, track.y - 2))
+
+        # Mute checkbox
+        mute_rect = pygame.Rect(px, py + 34, 14, 14)
+        self._mute_rect = mute_rect
+        pygame.draw.rect(surface, (55, 42, 26), mute_rect, border_radius=2)
+        if muted:
+            pygame.draw.rect(surface, _GOLD, mute_rect.inflate(-2, -2), border_radius=2)
+        pygame.draw.rect(surface, (100, 80, 45), mute_rect, 1, border_radius=2)
+        lbl = self._f_small.render("Mute", True, _GOLD if muted else _GRAY)
+        surface.blit(lbl, (px + 18, py + 34))
 
     def _draw_battle_over_banner(self, surface: pygame.Surface) -> None:
         overlay = pygame.Surface((_W, _H), pygame.SRCALPHA)

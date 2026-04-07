@@ -23,7 +23,6 @@ _FILES: dict[str, str] = {
     "swing_quick":  "swing_quick.wav",
     "swing_heavy":  "swing_heavy.wav",
     "impact_quick": "impact_quick.wav",
-    "impact_heavy": "impact_heavy.wav",
     "impact_girl":  "impact_girl.wav",
     "impact_man":   "impact_man.wav",
     "movement":     "movement.wav",
@@ -42,9 +41,11 @@ class SoundSystem:
 
     def __init__(self, sounds_dir: str,
                  master_volume: float = MASTER_VOLUME) -> None:
-        self._sounds:   dict[str, pygame.mixer.Sound] = {}
-        self._swing_ch: pygame.mixer.Channel | None   = None
-        self._master    = max(0.0, min(1.0, master_volume))
+        self._sounds:        dict[str, pygame.mixer.Sound] = {}
+        self._swing_ch:      pygame.mixer.Channel | None   = None
+        self._master         = max(0.0, min(1.0, master_volume))
+        self._music_volume:  float = 0.7
+        self._music_muted:   bool  = False
         self._load_all(sounds_dir)
 
     # ── Loading ───────────────────────────────────────────────────────────────
@@ -110,3 +111,48 @@ class SoundSystem:
                 snd.set_volume(self._master)
             except pygame.error:
                 pass
+
+    # ── Music ─────────────────────────────────────────────────────────────────
+
+    def play_music(self, path: str, loops: int = -1) -> None:
+        """Load and start playing a music file; loops=-1 means infinite."""
+        if not pygame.mixer.get_init():
+            return
+        try:
+            pygame.mixer.music.load(path)
+            pygame.mixer.music.set_volume(0.0 if self._music_muted else self._music_volume)
+            pygame.mixer.music.play(loops=loops)
+        except (pygame.error, FileNotFoundError, OSError) as exc:
+            logging.warning("SoundSystem: music load failed: %s", exc)
+
+    def stop_music(self) -> None:
+        """Stop any playing music."""
+        try:
+            pygame.mixer.music.stop()
+        except pygame.error:
+            pass
+
+    def set_music_volume(self, volume: float) -> None:
+        """Set music volume (0.0 – 1.0)."""
+        self._music_volume = max(0.0, min(1.0, volume))
+        if not self._music_muted:
+            try:
+                pygame.mixer.music.set_volume(self._music_volume)
+            except pygame.error:
+                pass
+
+    def mute_music(self, muted: bool) -> None:
+        """Mute or unmute music."""
+        self._music_muted = muted
+        try:
+            pygame.mixer.music.set_volume(0.0 if muted else self._music_volume)
+        except pygame.error:
+            pass
+
+    @property
+    def music_volume(self) -> float:
+        return self._music_volume
+
+    @property
+    def music_muted(self) -> bool:
+        return self._music_muted
