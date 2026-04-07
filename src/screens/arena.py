@@ -24,8 +24,8 @@ _ASSETS  = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "images
 _SOUNDS  = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "sounds")
 _PACK    = os.path.join(_ASSETS, "GandalfHardcore Character Asset Pack")
 
-# Frame at which the weapon makes contact for each action (used for impact sounds)
-_CONTACT_FRAME: dict[str, int] = {"Quick": 11, "Heavy": 15, "Ranged": 0}
+# Frame at which the weapon makes contact for each action (scaled with 1.5× slower anims)
+_CONTACT_FRAME: dict[str, int] = {"Quick": 17, "Heavy": 23, "Ranged": 0}
 
 # Player sprite layers (relative to _PACK) — all 800×448, 80×64 per frame, black colorkey
 # Hair drawn FIRST (base); skin drawn on top so face pixels overwrite hair at face-center.
@@ -51,11 +51,12 @@ _STATUS_Y    = _ARENA_Y + _ARENA_H
 _BUTTON_Y    = _STATUS_Y + _STATUS_H
 _LOG_Y       = _BUTTON_Y + _BUTTON_H
 
-_TILE_W      = 80
-_TILE_H      = _ARENA_H
-_ARENA_TILES = 8
-_ARENA_X     = (_W - _TILE_W * _ARENA_TILES) // 2
-_SPRITE_H    = 128   # scaled sprite height (64 × 2)
+_TILE_W       = 80
+_TILE_H       = _ARENA_H
+_ARENA_TILES  = 8
+_ARENA_X      = (_W - _TILE_W * _ARENA_TILES) // 2
+_SPRITE_H     = 128   # scaled sprite height (64 × 2)
+_FLOOR_TILE_H = 36    # height of the floor tile strip at the bottom of the arena
 
 _PLAYER_START_TILE = 2
 _ENEMY_START_TILE  = 5
@@ -237,9 +238,6 @@ class ArenaScreen:
                 for action, rect in self._action_btn_rects.items():
                     if rect.collidepoint(pos) and action in self.player.available_actions():
                         self._execute_round(action); return
-            elif self.state == "round_over":
-                if self._continue_rect and self._continue_rect.collidepoint(pos):
-                    self._advance_from_round_over()
             elif self.state == "battle_over":
                 if self._snd: self._snd.stop_music()
                 self._done = True
@@ -253,9 +251,6 @@ class ArenaScreen:
             action = self.ACTION_KEYS.get(event.key)
             if action and action in self.player.available_actions():
                 self._execute_round(action)
-        elif self.state == "round_over":
-            if event.key in (pygame.K_SPACE, pygame.K_RETURN):
-                self._advance_from_round_over()
         elif self.state == "battle_over":
             if event.key in (pygame.K_SPACE, pygame.K_RETURN):
                 if self._snd: self._snd.stop_music()
@@ -376,7 +371,7 @@ class ArenaScreen:
                 self._anim.add(hit_flash(True, _is_crit))
                 self._anim.add(sprite_knockback(True, -30.0 if enemy_action == "Heavy" else -15.0))
                 if enemy_action == "Heavy":
-                    self._anim.add(screen_shake(10 if _is_crit else 5, 12))
+                    self._anim.add(screen_shake(10 if _is_crit else 5, 18))
                 self._anim.float_text(
                     str(_dmg_in),
                     (255, 220, 50) if _is_crit else (255, 160, 100),
@@ -477,7 +472,7 @@ class ArenaScreen:
                 self._anim.add(hit_flash(False, crit))
                 self._anim.add(sprite_knockback(False, +30.0 if player_action == "Heavy" else +15.0))
                 if player_action == "Heavy":
-                    self._anim.add(screen_shake(10 if crit else 5, 12))
+                    self._anim.add(screen_shake(10 if crit else 5, 18))
                 self._anim.float_text(
                     str(result.player_damage_out),
                     (255, 220, 50) if crit else _WHITE,
@@ -522,7 +517,7 @@ class ArenaScreen:
                 self._anim.add(hit_flash(True, crit))
                 self._anim.add(sprite_knockback(True, -30.0 if enemy_action == "Heavy" else -15.0))
                 if enemy_action == "Heavy":
-                    self._anim.add(screen_shake(10 if crit else 5, 12))
+                    self._anim.add(screen_shake(10 if crit else 5, 18))
                 self._anim.float_text(
                     str(result.player_damage_in),
                     (255, 220, 50) if crit else (255, 160, 100),
@@ -668,7 +663,7 @@ class ArenaScreen:
                     self._anim.on_done(_set_over)
                 self._anim.on_done(_after_death)
             else:
-                self.state = "round_over"
+                self.state = "player_choose"
 
         self._queue_combat_anims(player_action, enemy_action, result, on_complete=_on_done)
 
@@ -760,21 +755,75 @@ class ArenaScreen:
         surface.blit(hp_txt, hp_txt.get_rect(centerx=bar_x + bar_w // 2, centery=bar_y + 7))
 
     def _draw_arena_floor(self, surface: pygame.Surface) -> None:
+        # ── Arena background ──────────────────────────────────────────────
         if self._bg_image:
             surface.blit(self._bg_image, (0, _ARENA_Y))
         else:
-            for i in range(_ARENA_TILES):
-                color = (22, 18, 12) if i % 2 == 0 else (26, 20, 14)
-                pygame.draw.rect(surface, color,
-                                 (_ARENA_X + i * _TILE_W, _ARENA_Y, _TILE_W, _TILE_H))
-        pygame.draw.line(surface, _DARK_BORDER, (0, _ARENA_Y + _TILE_H), (_W, _ARENA_Y + _TILE_H), 2)
+            pygame.draw.rect(surface, (18, 14, 10), (0, _ARENA_Y, _W, _ARENA_H))
 
+        # ── Distance label ────────────────────────────────────────────────
         dist = self._distance()
         dc   = (200, 100, 50) if dist >= _RANGE_FAR else (50, 180, 120) if dist <= _RANGE_CLOSE else _GRAY
-        dl   = ("FAR" if dist >= _RANGE_FAR else "CLOSE" if dist <= _RANGE_CLOSE else f"dist {dist}") + f"  ({dist})"
+        dl   = ("FAR" if dist >= _RANGE_FAR else "CLOSE" if dist <= _RANGE_CLOSE else f"dist {dist}")
         ds   = self._f_small.render(dl, True, dc)
         mid  = int((self._player_screen_cx() + self._enemy_screen_cx()) / 2)
         surface.blit(ds, ds.get_rect(centerx=mid, top=_ARENA_Y + 4))
+
+        # ── Floor tile strip ──────────────────────────────────────────────
+        tile_top = _ARENA_Y + _TILE_H - _FLOOR_TILE_H
+        p  = self._player_tile
+        e  = self._enemy_tile
+        lo = min(p, e)
+        hi = max(p, e)
+
+        for i in range(_ARENA_TILES):
+            tx = _ARENA_X + i * _TILE_W
+
+            if i == p:
+                fill   = (30, 55, 105)
+                top_c  = (70, 130, 215)
+                brd    = (55, 115, 210)
+            elif i == e:
+                fill   = (105, 30, 30)
+                top_c  = (210, 70, 70)
+                brd    = (205, 60, 60)
+            elif lo < i < hi:
+                if dist <= _RANGE_CLOSE:
+                    fill  = (85, 48, 14)
+                    top_c = (155, 90, 35)
+                    brd   = (130, 75, 28)
+                elif dist < _RANGE_FAR:
+                    fill  = (58, 55, 20)
+                    top_c = (115, 110, 48)
+                    brd   = (95, 90, 38)
+                else:
+                    fill  = (44, 44, 44)
+                    top_c = (78, 78, 78)
+                    brd   = (62, 62, 62)
+            else:
+                fill  = (24, 19, 13)
+                top_c = (44, 35, 24)
+                brd   = (46, 36, 24)
+
+            # Tile body + bevel edges
+            pygame.draw.rect(surface, fill, (tx, tile_top, _TILE_W, _FLOOR_TILE_H))
+            pygame.draw.line(surface, top_c, (tx, tile_top), (tx + _TILE_W, tile_top), 2)
+            pygame.draw.rect(surface, brd,   (tx, tile_top, _TILE_W, _FLOOR_TILE_H), 1)
+
+            # YOU / FOE labels on the occupied tiles
+            if i == p:
+                lbl = self._f_small.render("YOU", True, (140, 200, 255))
+                surface.blit(lbl, lbl.get_rect(
+                    centerx=tx + _TILE_W // 2,
+                    centery=tile_top + _FLOOR_TILE_H // 2))
+            elif i == e:
+                lbl = self._f_small.render("FOE", True, (255, 155, 140))
+                surface.blit(lbl, lbl.get_rect(
+                    centerx=tx + _TILE_W // 2,
+                    centery=tile_top + _FLOOR_TILE_H // 2))
+
+        pygame.draw.line(surface, _DARK_BORDER,
+                         (0, _ARENA_Y + _TILE_H), (_W, _ARENA_Y + _TILE_H), 2)
 
     def _apply_sprite(self, surface: pygame.Surface, spr: pygame.Surface,
                       cx: int, floor_y: int, angle: float, alpha: int,
@@ -808,7 +857,7 @@ class ArenaScreen:
 
     def _draw_combatants(self, surface: pygame.Surface) -> None:
         st      = self._anim.state
-        floor_y = _ARENA_Y + _TILE_H - 8
+        floor_y = _ARENA_Y + _TILE_H - _FLOOR_TILE_H   # feet rest on top of tile strip
 
         # ── Player ────────────────────────────────────────────────────────
         px_base   = _ARENA_X + self._player_tile * _TILE_W + _TILE_W // 2
@@ -969,66 +1018,60 @@ class ArenaScreen:
         self._advance_btn_rect = None
         self._continue_rect    = None
 
-        cy = _BUTTON_Y + _BUTTON_H // 2
-
-        if self.state == "round_over":
-            cont_rect = pygame.Rect(_W // 2 - 180, cy - 25, 360, 50)
-            pygame.draw.rect(surface, (35, 28, 20), cont_rect, border_radius=6)
-            pygame.draw.rect(surface, _DARK_BORDER, cont_rect, 2, border_radius=6)
-            hint = self._f_sub.render("SPACE / click — continue", True, _GRAY)
-            surface.blit(hint, hint.get_rect(center=cont_rect.center))
-            self._continue_rect = cont_rect
-            return
-
         if self.state == "battle_over":
             return
 
-        # Move buttons
+        # Locked = animation playing; buttons render greyed-out and are click-blocked
+        locked    = self._anim.busy()
+        cy        = _BUTTON_Y + _BUTTON_H // 2
+        mouse_pos = pygame.mouse.get_pos()
+
+        # Move buttons (no arrow characters — just label text)
         ret_rect = pygame.Rect(_MOVE_BTN_MARGIN, cy - _MOVE_BTN_H // 2, _MOVE_BTN_W, _MOVE_BTN_H)
         adv_rect = pygame.Rect(_W - _MOVE_BTN_MARGIN - _MOVE_BTN_W, cy - _MOVE_BTN_H // 2,
                                _MOVE_BTN_W, _MOVE_BTN_H)
-        mouse_pos  = pygame.mouse.get_pos()
-        can_move   = self._can_move()
-        for rect, label, arrow in ((ret_rect, "Retreat", "◀"), (adv_rect, "Advance", "▶")):
+        can_move = self._can_move() and not locked
+        for rect, label in ((ret_rect, "Retreat"), (adv_rect, "Advance")):
             hov = rect.collidepoint(mouse_pos) and can_move
             if can_move:
                 bg_c  = (45, 34, 20) if hov else (35, 26, 15)
                 bd_c  = _HOVER if hov else (160, 125, 60)
-                arr_c = _HOVER if hov else _GOLD
                 lbl_c = _HOVER if hov else _WHITE
             else:
-                bg_c, bd_c, arr_c, lbl_c = (20, 16, 12), (55, 45, 35), (70, 60, 45), (60, 55, 45)
+                bg_c  = (18, 14, 10)
+                bd_c  = (45, 36, 26)
+                lbl_c = (55, 50, 42)
             pygame.draw.rect(surface, bg_c, rect, border_radius=6)
             pygame.draw.rect(surface, bd_c, rect, 2, border_radius=6)
-            surface.blit(self._f_sub.render(arrow, True, arr_c),
-                         self._f_sub.render(arrow, True, arr_c).get_rect(
-                             center=(rect.centerx, rect.centery - 10)))
-            surface.blit(self._f_small.render(label, True, lbl_c),
-                         self._f_small.render(label, True, lbl_c).get_rect(
-                             center=(rect.centerx, rect.centery + 12)))
-        if not can_move:
+            lbl_s = self._f_sub.render(label, True, lbl_c)
+            surface.blit(lbl_s, lbl_s.get_rect(center=rect.center))
+        if self._can_move() and not locked:
+            pass  # no IMMOBILIZED label when locked
+        elif not self._can_move():
             imm = self._f_small.render("IMMOBILIZED", True, (180, 60, 60))
             mid = (ret_rect.right + adv_rect.left) // 2
             surface.blit(imm, imm.get_rect(centerx=mid, bottom=ret_rect.top - 2))
         self._retreat_btn_rect = ret_rect
         self._advance_btn_rect = adv_rect
 
-        # Action buttons — show exactly what the player can do this round
+        # Action buttons
         available = self.player.available_actions()
         actions   = [a for a in _ACTIONS_ORDER if a in available]
-        zone_x1      = ret_rect.right + 10
-        zone_x2      = adv_rect.left  - 10
-        total_w      = len(actions) * _BTN_W + (len(actions) - 1) * _BTN_GAP
-        start_x      = zone_x1 + (zone_x2 - zone_x1 - total_w) // 2
-        dist         = self._distance()
+        zone_x1   = ret_rect.right + 10
+        zone_x2   = adv_rect.left  - 10
+        total_w   = len(actions) * _BTN_W + (len(actions) - 1) * _BTN_GAP
+        start_x   = zone_x1 + (zone_x2 - zone_x1 - total_w) // 2
+        dist      = self._distance()
 
         for i, action in enumerate(actions):
-            bx, by   = start_x + i * (_BTN_W + _BTN_GAP), cy - _BTN_H // 2
-            enabled  = action in available
-            warn     = action in ("Heavy", "Quick") and dist >= _RANGE_FAR
+            bx, by  = start_x + i * (_BTN_W + _BTN_GAP), cy - _BTN_H // 2
+            enabled = action in available
+            warn    = action in ("Heavy", "Quick") and dist >= _RANGE_FAR
             ranged_w = action == "Ranged" and dist <= _RANGE_CLOSE
 
-            if warn:
+            if locked:
+                bg, border, text_c = (18, 14, 10), (38, 30, 20), (52, 48, 42)
+            elif warn:
                 bg, border, text_c = (25, 18, 12), (100, 60, 40), (100, 80, 60)
             elif ranged_w:
                 bg, border, text_c = (35, 26, 16), (160, 140, 60), (200, 180, 80)
@@ -1040,11 +1083,12 @@ class ArenaScreen:
             btn_rect = pygame.Rect(bx, by, _BTN_W, _BTN_H)
             pygame.draw.rect(surface, bg,     btn_rect, border_radius=6)
             pygame.draw.rect(surface, border, btn_rect, 2, border_radius=6)
-            surface.blit(self._f_small.render(f"[{i + 1}]", True, _GOLD if enabled else _GRAY),
+            surface.blit(self._f_small.render(f"[{i + 1}]", True,
+                         (52, 48, 42) if locked else (_GOLD if enabled else _GRAY)),
                          (bx + 8, by + 8))
             al = self._f_sub.render(action, True, text_c)
             surface.blit(al, al.get_rect(center=(bx + _BTN_W // 2, by + _BTN_H // 2 + 4)))
-            if warn:
+            if warn and not locked:
                 ms = self._f_small.render("OUT OF RANGE", True, (180, 80, 40))
                 surface.blit(ms, ms.get_rect(centerx=bx + _BTN_W // 2, bottom=by + _BTN_H - 4))
             self._action_btn_rects[action] = btn_rect

@@ -129,60 +129,60 @@ def _lerp(a: float, b: float, t: float) -> float:
 # ── Animation factories ───────────────────────────────────────────────────────
 
 def quick_atk(is_player: bool) -> _Track:
-    """Lunge 80 px toward opponent (12 f), hold (6 f), snap back (8 f)."""
+    """Lunge 80 px toward opponent (18 f), hold (9 f), snap back (12 f)."""
     d = +1 if is_player else -1
     def fn(f: int, st: AState) -> None:
-        if f < 12:   v = 80.0 * f / 11
-        elif f < 18: v = 80.0
-        else:        v = 80.0 * (1.0 - (f - 18) / 7.0)
+        if f < 18:   v = 80.0 * f / 17
+        elif f < 27: v = 80.0
+        else:        v = 80.0 * (1.0 - (f - 27) / 11.0)
         if is_player: st.player_atk_x = d * v
         else:          st.enemy_atk_x  = d * v
-    return _Track([_Seg(26, fn)])
+    return _Track([_Seg(39, fn)])
 
 
 def heavy_atk(is_player: bool) -> _Track:
-    """Wind back 20 px (8 f), lunge 100 px (8 f), snap back (12 f)."""
+    """Wind back 20 px (12 f), lunge 100 px (12 f), snap back (18 f)."""
     d = +1 if is_player else -1
     def fn(f: int, st: AState) -> None:
-        if f < 8:    v = _lerp(0.0,   -20.0, f / 7.0)
-        elif f < 16: v = _lerp(-20.0, 100.0, (f - 8) / 7.0)
-        else:        v = _lerp(100.0,   0.0, (f - 16) / 11.0)
+        if f < 12:   v = _lerp(0.0,   -20.0, f / 11.0)
+        elif f < 24: v = _lerp(-20.0, 100.0, (f - 12) / 11.0)
+        else:        v = _lerp(100.0,   0.0, (f - 24) / 17.0)
         if is_player: st.player_atk_x = d * v
         else:          st.enemy_atk_x  = d * v
-    return _Track([_Seg(28, fn)])
+    return _Track([_Seg(42, fn)])
 
 
 def defend_anim(is_player: bool) -> _Track:
-    """Slide 15 px backward with blue tint (16 f)."""
+    """Slide 15 px backward with blue tint (24 f)."""
     d = +1 if is_player else -1
     def fn(f: int, st: AState) -> None:
-        t = min(f / 4.0, 1.0)
+        t = min(f / 6.0, 1.0)
         if is_player:
             st.player_atk_x = d * (-15.0 * t)
             st.player_tint  = (80, 120, 220, int(100 * t))
         else:
             st.enemy_atk_x = d * (-15.0 * t)
-    return _Track([_Seg(16, fn)])
+    return _Track([_Seg(24, fn)])
 
 
 def hit_flash(is_player: bool, crit: bool) -> _Track:
-    """Flash white (or red on crit) for 4 frames."""
+    """Flash white (or red on crit) for 6 frames."""
     col = (255, 60, 60) if crit else (255, 255, 255)
     def fn(f: int, st: AState) -> None:
-        if f < 4:
+        if f < 6:
             tint = col + (200,)
             if is_player: st.player_tint = tint
             else:          st.enemy_tint  = tint
-    return _Track([_Seg(8, fn)])
+    return _Track([_Seg(12, fn)])
 
 
 def sprite_knockback(is_player: bool, dx: float) -> _Track:
-    """Push sprite dx pixels, decay to 0 over 12 f. +dx = rightward."""
+    """Push sprite dx pixels, decay to 0 over 18 f. +dx = rightward."""
     def fn(f: int, st: AState) -> None:
-        v = dx * max(0.0, 1.0 - f / 11.0)
+        v = dx * max(0.0, 1.0 - f / 17.0)
         if is_player: st.player_kb_x = v
         else:          st.enemy_kb_x  = v
-    return _Track([_Seg(12, fn)])
+    return _Track([_Seg(18, fn)])
 
 
 def screen_shake(strength: int, frames: int) -> _Track:
@@ -196,32 +196,32 @@ def screen_shake(strength: int, frames: int) -> _Track:
 
 
 def miss_flash(is_player: bool) -> _Track:
-    """Dim to 50 % alpha then restore over 16 f."""
+    """Dim to 50 % alpha then restore over 24 f."""
     def fn(f: int, st: AState) -> None:
-        alpha = 128 if f < 8 else int(128 + 127 * (f - 8) / 7.0)
+        alpha = 128 if f < 12 else int(128 + 127 * (f - 12) / 11.0)
         if is_player: st.player_alpha = alpha
         else:          st.enemy_alpha  = alpha
-    return _Track([_Seg(16, fn)])
+    return _Track([_Seg(24, fn)])
 
 
 def death_anim(is_player: bool) -> _Track:
-    """Rotate 90° and fade to 0 alpha over 40 f."""
+    """Rotate 90° and fade to 0 alpha over 60 f."""
     def fn(f: int, st: AState) -> None:
-        t = f / 39.0
+        t = f / 59.0
         if is_player:
             st.player_angle = 90.0 * t
             st.player_alpha = int(255 * (1.0 - t))
         else:
             st.enemy_angle = 90.0 * t
             st.enemy_alpha = int(255 * (1.0 - t))
-    return _Track([_Seg(40, fn)])
+    return _Track([_Seg(60, fn)])
 
 
 def screen_fade() -> _Track:
-    """Fade entire screen to black over 40 f."""
+    """Fade entire screen to black over 60 f."""
     def fn(f: int, st: AState) -> None:
-        st.overlay_alpha = int(255.0 * f / 39.0)
-    return _Track([_Seg(40, fn)])
+        st.overlay_alpha = int(255.0 * f / 59.0)
+    return _Track([_Seg(60, fn)])
 
 
 def hold_black(frames: int) -> _Track:
@@ -231,7 +231,7 @@ def hold_black(frames: int) -> _Track:
     return _Track([_Seg(frames, fn)])
 
 
-def boss_entry(frames: int = 30) -> _Track:
+def boss_entry(frames: int = 45) -> _Track:
     """Slide enemy sprite in from off-screen right over given frames."""
     def fn(f: int, st: AState) -> None:
         t = f / max(1, frames - 1)
@@ -239,7 +239,7 @@ def boss_entry(frames: int = 30) -> _Track:
     return _Track([_Seg(frames, fn)])
 
 
-def screen_flash_white(frames: int = 10) -> _Track:
+def screen_flash_white(frames: int = 15) -> _Track:
     """White overlay that fades out over given frames."""
     def fn(f: int, st: AState) -> None:
         st.overlay_color = (255, 255, 255)
